@@ -1,0 +1,33 @@
+# Build & IDE
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+*.user
+*.pro.user
+*.autosave
+*.qmake.stash
+*.qmlproject.user*
+*.creator.user*
+.vscode/
+.idea/
+.vs/
+
+# Binaries
+*.exe
+*.dll
+*.lib
+*.so
+*.dylib
+*.a
+*.obj
+*.o
+*.pch
+*.pdb
+
+# Logs
+*.log
+
+# Others
+*.DS_Store
+Thumbs.db
