@@ -52,10 +52,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         avrecorder.h avrecorder.cpp
         avsender.h avsender.cpp
         avreceiver.h avreceiver.cpp
-        rtcsignaling.h rtcsignaling.cpp
-        rtcengine.h rtcengine.cpp
-        rtcengine.h rtcengine.cpp
-        rtcengine.cpp rtcengine.h
+        rtmppusher.h rtmppusher.cpp
 
 
 

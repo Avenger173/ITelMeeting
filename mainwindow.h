@@ -20,6 +20,7 @@
 #include"avrecorder.h"
 #include"avsender.h"
 #include"avreceiver.h"
+#include"rtmppusher.h"
 extern "C"{
 #include<libavcodec/avcodec.h>
 #include<libavformat/avformat.h>
@@ -96,6 +97,8 @@ private:
     QIODevice *recvAudioOutput=nullptr;
     SwrContext *recvPlaySwrCtx=nullptr;
     QAudioFormat recvPlayFormat;
+
+    RtmpPusher* pusher=nullptr;
 
 };
 #endif // MAINWINDOW_H
