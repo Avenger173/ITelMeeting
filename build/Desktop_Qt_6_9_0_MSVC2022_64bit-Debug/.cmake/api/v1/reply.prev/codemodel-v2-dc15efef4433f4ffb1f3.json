@@ -1,0 +1,79 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-Debug-2eddc2858de141c58cd4.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.16"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "SmartMeet",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "SmartMeet::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SmartMeet-Debug-26cc5186f275fea82d27.json",
+					"name" : "SmartMeet",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SmartMeet_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SmartMeet_autogen-Debug-ba1e0cbaad5d54b1fad8.json",
+					"name" : "SmartMeet_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "SmartMeet_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-SmartMeet_autogen_timestamp_deps-Debug-fd8ca26fe2e0c0590104.json",
+					"name" : "SmartMeet_autogen_timestamp_deps",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "D:/QTcoding/SmartMeet/build/Desktop_Qt_6_9_0_MSVC2022_64bit-Debug",
+		"source" : "D:/QTcoding/SmartMeet"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 7
+	}
+}
