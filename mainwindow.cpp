@@ -158,15 +158,17 @@ void MainWindow::on_startMeetingButton_clicked()
 
     //启动RTMP推流到ZLMediaKit
     if(!pusher) pusher=new RtmpPusher(this);
-
-    if(pusher->start(QStringLiteral("rtmp://127.0.0.1:1935/live/test"),/*fps=*/30,/*sampleRate=*/44100)){
-        qDebug()<<"[MainWindow] RTMP 推流已启动";
-        //把AvRecorder的编码包接过去(只连一次即可)
-        connect(recorder,&AvRecorder::videoPacketReady,pusher,&RtmpPusher::pushEncodeVideo,Qt::QueuedConnection);
-        connect(recorder,&AvRecorder::audioPacketReady,pusher,&RtmpPusher::pushEncodeAudio,Qt::QueuedConnection);
+    pusher->setVideoParams(640,480,30);
+    pusher->setAudioParams(44100,1);
+    //先启动RTMP推流
+    if(!pusher->start("rtmp://127.0.0.1/live/test",30,44100)){
+        qWarning()<<"[Mainwindow]RTMP推流启动失败";
     }else{
-        qWarning()<<"[MainWindow] RTMP 推流启动失败";
+        qDebug()<<"[Mainwindow]RTMP推流已启动";
     }
+    //连接"编码后"数据->推流器
+    connect(recorder,&AvRecorder::videoPacketReady,pusher,&RtmpPusher::pushEncodeVideo,Qt::QueuedConnection);
+    connect(recorder,&AvRecorder::audioPacketReady,pusher,&RtmpPusher::pushEncodeAudio,Qt::QueuedConnection);
 }
 
 void MainWindow::on_switchCameraButton_clicked()

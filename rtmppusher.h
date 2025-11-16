@@ -25,6 +25,8 @@ public:
     bool start(const QString& rtmpUrl,int fps,int sampleRate);
     //停止推流
     void stop();
+    void setVideoParams(int w,int h,int fps){vW=w;vH=h;vFps=fps;}
+    void setAudioParams(int sr,int ch){aRate=sr;aCh=ch;}
 public slots:
     //接AvRecorder的信号
     void pushEncodeVideo(const QByteArray& pktData,quint32 pts_ms);
@@ -49,6 +51,23 @@ private:
     //工具
     bool writeHeader_(int fps,int sampleRate);
     void writeInterleaved_(AVPacket* pkt,AVStream* st,AVRational inTb);
+
+    QByteArray vExtra_;
+    QByteArray aExtra_;
+    bool haveVConf=false;
+    bool haveAConf=false;
+
+    int vW=640,vH=480,vFps=30;
+    int aRate=44100,aCh=1;
+    //H264 NAL提取工具
+    static void parseH264AnnexBForSpsPps(const uint8_t* data,int size,QByteArray& sps,QByteArray& pps,bool& isKeyFrame);
+    static QByteArray makeAvcCFromSpsPps(const QByteArray& sps,const QByteArray& pps);
+
+    //AAC ASC生成(LC,最常用)
+    static inline uint8_t srIndexFromRate(int sr);
+    static QByteArray makeAacAsc(int sampleRate,int channles);
+    //延迟写Header:当haveVConf&&haveAConf都为真时才写
+    bool ensureHeaderWritten();
 
     //禁用拷贝
     Q_DISABLE_COPY(RtmpPusher)
