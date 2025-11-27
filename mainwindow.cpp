@@ -78,6 +78,8 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     qDebug()<<"[MainWindow] dtor";
+    //防止用户未关闭音频采集
+    on_stopAudioButton_clicked();
     if (playSwrCtx) {
         swr_free(&playSwrCtx);
         playSwrCtx = nullptr;
@@ -104,6 +106,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_startMeetingButton_clicked()
 {
+    //初始化发送端
     if(!sender) sender=new AVSender(this);
 
     if(sender->start("127.0.0.1",12345,12346)){
@@ -123,10 +126,6 @@ void MainWindow::on_startMeetingButton_clicked()
             ui->localVideolabel->setPixmap(QPixmap::fromImage(img).scaled(
                 ui->localVideolabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
-            if(sender){//同步推流
-                QByteArray data((const char*)img.bits(),img.sizeInBytes());
-                sender->sendEncodedVideo(data,QDateTime::currentMSecsSinceEpoch()%100000);
-            }
             if(camRecording&&recorder&&recorder->isOpen()){
                 //简单节流
                 const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
@@ -145,12 +144,6 @@ void MainWindow::on_startMeetingButton_clicked()
 
         videoThread->start();
     }
-    //初始化发送端
-    if(!sender) sender=new AVSender(this);
-    if(!sender->start("127.0.0.1",12345,12346))
-        qWarning()<<"[Mainwindow] AVSender 启动失败";
-    else
-        qDebug()<<"[Mainwindow] 发送端已启动";
 
     //连接录像模块->推流模块
     connect(recorder,&AvRecorder::videoPacketReady,sender,&AVSender::sendEncodedVideo,Qt::QueuedConnection);
@@ -330,6 +323,8 @@ void MainWindow::on_stopAudioButton_clicked()
         swr_free(&playSwrCtx);
         playSwrCtx = nullptr;
     }
+
+    qDebug()<<"[Mainwindow]音频采集已停止";
 }
 
 
@@ -598,43 +593,41 @@ void MainWindow::on_startReceiveButton_clicked()
         qDebug()<<msg;
     });
 
-    //启动接收端(视频12345，音频12346)
-    if(receiver->start("127.0.0.1",12345,12346)){
-        qDebug()<<"[Mainwindow]接收端已启动";
-    }else{
-        qDebug()<<"[Mainwidnow]接收端启动失败";
-    }
 }
 
 
 void MainWindow::on_stopMeetingButton_clicked()
 {
-    //1.断开recorder->sender连接，避免继续发包
-    if(recorder&&sender){
-        QObject::disconnect(recorder,nullptr,sender,nullptr);
-    }
+    //先停止音频采集（如果正在采集）
+    on_stopAudioButton_clicked();
     //2.停止视频采集线程
-    if(videoWorker){
-        QMetaObject::invokeMethod(videoWorker,"stop",Qt::QueuedConnection);
-    }
-    if(videoThread){
+    if(videoWorker&&videoThread){
+        //请求采集线程结束循环
         videoWorker->stop();
         videoThread->quit();
         videoThread->wait();
-        videoThread->deleteLater();
-        videoWorker->deleteLater();
+        delete videoWorker;
+        delete videoThread;
         videoThread=nullptr;
         videoWorker=nullptr;
+    }
+    //停止接收端(UDP收流+播放)
+    if(receiver){
+        receiver->stop();
+        delete receiver;
+        receiver=nullptr;
     }
     //3.停止发送端
     if(sender){
         sender->stop();
-        sender->deleteLater();
+        delete sender;
         sender=nullptr;
     }
     //4.停止RTMP推流
     if(pusher){
         pusher->stop();
+        delete pusher;
+        pusher=nullptr;
     }
     qDebug()<<"[Mainwindow]会议已结束";
 }

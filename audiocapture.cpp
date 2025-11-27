@@ -239,6 +239,7 @@ void AudioCapture::stop()
 {
     running = false;
     // 不再这里 cleanup，避免采集线程未退出时资源被提前释放
+    qDebug() << "[AudioCapture] 停止音频采集线程";
 }
 
 void AudioCapture::cleanup()
@@ -265,7 +266,7 @@ void AudioCapture::cleanup()
         swr_free(&swrCtx);
     }
 
-
+    qDebug() << "[AudioCapture] cleanup complete.";
 }
 
 

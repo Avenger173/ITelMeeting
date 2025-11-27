@@ -1,5 +1,9 @@
 #include "rtmppusher.h"
 #include<QDebug>
+
+//工具函数前向声明:查找H.264 AnnexB起始码(00 00 00 01或00 00 01)
+static inline int findStartCode(const uint8_t *p, int end, int &off);
+
 RtmpPusher::RtmpPusher(QObject *parent)
     : QObject{parent}
 {
@@ -89,7 +93,7 @@ void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
     //1.尝试从AnnexB里解析出SPS/PPS,并确认是否为关键帧
     QByteArray sps,pps;
     bool isKey=false;
-    parseH264AnnexBForSpsPps(reinterpret_cast<const uint8_t*>(pktData.constData()),pktData.size,sps,pps,isKey);
+    parseH264AnnexBForSpsPps(reinterpret_cast<const uint8_t*>(pktData.constData()),pktData.size(),sps,pps,isKey);
     if(!haveVConf){
         if(!sps.isEmpty()&&!pps.isEmpty()){
             vExtra_=makeAvcCFromSpsPps(sps,pps);
@@ -230,8 +234,12 @@ QByteArray RtmpPusher::makeAvcCFromSpsPps(const QByteArray &sps, const QByteArra
 uint8_t RtmpPusher::srIndexFromRate(int sr)
 {
     //按ISO表
-    static const int srs[]={96000,88200,64000,48000,44100,32000,24000,22050,16000,12000,11025,8000,7350};
-    for(int i=0;i<13;++i) if(srs[i]==sr) return (uint8_t);
+    static const int srs[]={96000,88200,64000,48000,44100,32000,
+                              24000,22050,16000,12000,11025,8000,7350
+    };
+    for(int i=0;i<13;++i)
+        if(srs[i]==sr)
+            return static_cast<uint8_t>(i);//返回对应index
     //找不到就用44100的index=4
     return 4;
 }
@@ -283,7 +291,7 @@ bool RtmpPusher::ensureHeaderWritten()
         return false;
     }
     qInfo()<<"[RtmpPusher] header written (FLV with H264/AAC)";
-    return ture;
+    return true;
 }
 //找到AnnexB起始码(00 00 00 01或00 00 01)
 static inline int findStartCode(const uint8_t* p,int end,int& off){

@@ -40,6 +40,7 @@ public:
 signals:
     void videoPacketReady(const QByteArray &pktData,quint32 pts_ms);
     void audioPacketReady(const QByteArray &pktData,quint32 pts_ms);
+private:
     //文件/容器层
     AVFormatContext *fmtCtx=nullptr;
     //视频编码器/流
