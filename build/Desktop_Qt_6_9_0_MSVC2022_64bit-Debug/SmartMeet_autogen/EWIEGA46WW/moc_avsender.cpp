@@ -39,47 +39,29 @@ template <> constexpr inline auto AVSender::qt_create_metaobjectdata<qt_meta_tag
     namespace QMC = QtMocConstants;
     QtMocHelpers::StringRefStorage qt_stringData {
         "AVSender",
-        "infoMessage",
-        "",
-        "msg",
-        "warnMessage",
-        "sendPacketInternal",
-        "datagram",
-        "port",
         "sendEncodedVideo",
+        "",
         "encodePkt",
         "pts_ms",
         "sendEncodedAudio"
     };
 
     QtMocHelpers::UintData qt_methods {
-        // Signal 'infoMessage'
-        QtMocHelpers::SignalData<void(const QString &)>(1, 2, QMC::AccessPublic, QMetaType::Void, {{
-            { QMetaType::QString, 3 },
-        }}),
-        // Signal 'warnMessage'
-        QtMocHelpers::SignalData<void(const QString &)>(4, 2, QMC::AccessPublic, QMetaType::Void, {{
-            { QMetaType::QString, 3 },
-        }}),
-        // Slot 'sendPacketInternal'
-        QtMocHelpers::SlotData<void(const QByteArray &, quint16)>(5, 2, QMC::AccessPrivate, QMetaType::Void, {{
-            { QMetaType::QByteArray, 6 }, { QMetaType::UShort, 7 },
+        // Method 'sendEncodedVideo'
+        QtMocHelpers::MethodData<void(const QByteArray &, quint32)>(1, 2, QMC::AccessPublic, QMetaType::Void, {{
+            { QMetaType::QByteArray, 3 }, { QMetaType::UInt, 4 },
         }}),
         // Method 'sendEncodedVideo'
-        QtMocHelpers::MethodData<void(const QByteArray &, quint32)>(8, 2, QMC::AccessPublic, QMetaType::Void, {{
-            { QMetaType::QByteArray, 9 }, { QMetaType::UInt, 10 },
-        }}),
-        // Method 'sendEncodedVideo'
-        QtMocHelpers::MethodData<void(const QByteArray &)>(8, 2, QMC::AccessPublic | QMC::MethodCloned, QMetaType::Void, {{
-            { QMetaType::QByteArray, 9 },
+        QtMocHelpers::MethodData<void(const QByteArray &)>(1, 2, QMC::AccessPublic | QMC::MethodCloned, QMetaType::Void, {{
+            { QMetaType::QByteArray, 3 },
         }}),
         // Method 'sendEncodedAudio'
-        QtMocHelpers::MethodData<void(const QByteArray &, quint32)>(11, 2, QMC::AccessPublic, QMetaType::Void, {{
-            { QMetaType::QByteArray, 9 }, { QMetaType::UInt, 10 },
+        QtMocHelpers::MethodData<void(const QByteArray &, quint32)>(5, 2, QMC::AccessPublic, QMetaType::Void, {{
+            { QMetaType::QByteArray, 3 }, { QMetaType::UInt, 4 },
         }}),
         // Method 'sendEncodedAudio'
-        QtMocHelpers::MethodData<void(const QByteArray &)>(11, 2, QMC::AccessPublic | QMC::MethodCloned, QMetaType::Void, {{
-            { QMetaType::QByteArray, 9 },
+        QtMocHelpers::MethodData<void(const QByteArray &)>(5, 2, QMC::AccessPublic | QMC::MethodCloned, QMetaType::Void, {{
+            { QMetaType::QByteArray, 3 },
         }}),
     };
     QtMocHelpers::UintData qt_properties {
@@ -104,21 +86,12 @@ void AVSender::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, vo
     auto *_t = static_cast<AVSender *>(_o);
     if (_c == QMetaObject::InvokeMetaMethod) {
         switch (_id) {
-        case 0: _t->infoMessage((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 1: _t->warnMessage((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 2: _t->sendPacketInternal((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint16>>(_a[2]))); break;
-        case 3: _t->sendEncodedVideo((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint32>>(_a[2]))); break;
-        case 4: _t->sendEncodedVideo((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
-        case 5: _t->sendEncodedAudio((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint32>>(_a[2]))); break;
-        case 6: _t->sendEncodedAudio((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
+        case 0: _t->sendEncodedVideo((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint32>>(_a[2]))); break;
+        case 1: _t->sendEncodedVideo((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
+        case 2: _t->sendEncodedAudio((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint32>>(_a[2]))); break;
+        case 3: _t->sendEncodedAudio((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
         default: ;
         }
-    }
-    if (_c == QMetaObject::IndexOfMethod) {
-        if (QtMocHelpers::indexOfMethod<void (AVSender::*)(const QString & )>(_a, &AVSender::infoMessage, 0))
-            return;
-        if (QtMocHelpers::indexOfMethod<void (AVSender::*)(const QString & )>(_a, &AVSender::warnMessage, 1))
-            return;
     }
 }
 
@@ -141,27 +114,15 @@ int AVSender::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 7)
+        if (_id < 4)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 7;
+        _id -= 4;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 7)
+        if (_id < 4)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 7;
+        _id -= 4;
     }
     return _id;
-}
-
-// SIGNAL 0
-void AVSender::infoMessage(const QString & _t1)
-{
-    QMetaObject::activate<void>(this, &staticMetaObject, 0, nullptr, _t1);
-}
-
-// SIGNAL 1
-void AVSender::warnMessage(const QString & _t1)
-{
-    QMetaObject::activate<void>(this, &staticMetaObject, 1, nullptr, _t1);
 }
 QT_WARNING_POP

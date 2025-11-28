@@ -323,6 +323,7 @@ D:/QTcoding/SmartMeet/avreceiver.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtMultimedia/qtmultimedia-config.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtMultimedia/qtmultimediaexports.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtMultimedia/qtmultimediaglobal.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QHostAddress
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QUdpSocket
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qabstractsocket.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qhostaddress.h
@@ -357,12 +358,14 @@ D:/QTcoding/SmartMeet/avreceiver.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/error.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/frame.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/hwcontext.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/imgutils.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/intfloat.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/log.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/macros.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mathematics.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mem.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/opt.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixdesc.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixfmt.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/rational.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/samplefmt.h
@@ -373,120 +376,16 @@ D:/QTcoding/SmartMeet/avreceiver.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/swscale.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version_major.h
-D:/QTcoding/SmartMeet/avrecorder.h
+D:/QTcoding/SmartMeet/rtcsignaling.h
  mmc:Q_OBJECT
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/calib3d.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/affine.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/async.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/base.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/bufferpool.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/check.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cuda.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cuda.inl.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cuda_types.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cv_cpu_dispatch.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvdef.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvstd.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvstd.inl.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvstd_wrapper.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/fast_math.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/hal/interface.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/mat.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/mat.inl.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/matx.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/neon_utils.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/operations.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/optim.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/ovx.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/persistence.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/saturate.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/traits.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/types.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/utility.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/version.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/vsx_utils.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/dict.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/dnn.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/dnn.inl.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/layer.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/utils/inference_engine.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/version.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/features2d.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/all_indices.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/allocator.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/any.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/autotuned_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/composite_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/config.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/defines.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/dist.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/dynamic_bitset.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/flann_base.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/general.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/ground_truth.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/heap.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/hierarchical_clustering_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/index_testing.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/kdtree_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/kdtree_single_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/kmeans_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/linear_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/logger.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/lsh_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/lsh_table.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/matrix.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/miniflann.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/nn_index.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/params.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/random.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/result_set.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/sampling.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/saving.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/timer.h
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/highgui.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/imgcodecs.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/imgproc.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/imgproc/segmentation.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/ml.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/ml/ml.inl.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/aruco_board.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/aruco_detector.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/aruco_dictionary.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/barcode.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/charuco_detector.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/detection_based_tracker.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/face.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/graphical_code_detector.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/opencv.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/opencv_modules.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/photo.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/blenders.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/camera.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/exposure_compensate.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/matchers.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/motion_estimators.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/seam_finders.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/util.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/util_inl.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/warpers.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/warpers_inl.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/warpers.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/video.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/video/background_segm.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/video/tracking.hpp
- mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/videoio.hpp
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QDeadlineTimer
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QMutex
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QFlags
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QJsonDocument
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QJsonObject
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QObject
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QQueue
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QSharedDataPointer
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QString
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QThread
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QWaitCondition
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QUrl
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QVariant
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q17memory.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20functional.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20iterator.h
@@ -494,6 +393,7 @@ D:/QTcoding/SmartMeet/avrecorder.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20type_traits.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20utility.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q23utility.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q26numeric.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qalgorithms.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qanystringview.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qarraydata.h
@@ -508,6 +408,9 @@ D:/QTcoding/SmartMeet/avrecorder.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qbytearrayalgorithms.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qbytearraylist.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qbytearrayview.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcalendar.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcborcommon.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcborvalue.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qchar.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcompare.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcompare_impl.h
@@ -518,10 +421,13 @@ D:/QTcoding/SmartMeet/avrecorder.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontainerfwd.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontainerinfo.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontainertools_impl.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontiguouscache.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcryptographichash.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdarwinhelpers.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdatastream.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdeadlinetimer.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qelapsedtimer.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdatetime.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdebug.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qendian.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qexceptionhandling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qflags.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qfloat16.h
@@ -531,21 +437,26 @@ D:/QTcoding/SmartMeet/avrecorder.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qgenericatomic.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qglobal.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qglobalstatic.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qhash.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qhashfunctions.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiodevice.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiodevicebase.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiterable.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiterator.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsondocument.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsonobject.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsonparseerror.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsonvalue.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlatin1stringview.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qline.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlist.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlocale.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlogging.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmalloc.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmargins.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmap.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmath.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmetacontainer.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmetatype.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qminmax.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmutex.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qnamespace.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qnumeric.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qobject.h
@@ -554,14 +465,16 @@ D:/QTcoding/SmartMeet/avrecorder.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qobjectdefs_impl.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qoverload.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qpair.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qpoint.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qprocessordetection.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qqueue.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qrect.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qrefcount.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qregularexpression.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qscopedpointer.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qscopeguard.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qsize.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qset.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qshareddata.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qshareddata_impl.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qsharedpointer.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qsharedpointer_impl.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qspan.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qstdlibdetection.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qstring.h
@@ -588,84 +501,52 @@ D:/QTcoding/SmartMeet/avrecorder.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtdeprecationdefinitions.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtdeprecationmarkers.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtenvironmentvariables.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtextstream.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtformat_impl.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qthread.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtmetamacros.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtnoop.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtpreprocessorsupport.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtresource.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtsan_impl.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qttranslation.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qttypetraits.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtversion.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtversionchecks.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtypeinfo.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtypes.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qurl.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qutf8stringview.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/quuid.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qvariant.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qvarlengtharray.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qversiontagging.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qwaitcondition.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qxptype_traits.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qyieldcpu.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/QImage
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qcolor.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qimage.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qpaintdevice.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qpixelformat.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qpolygon.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qregion.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qrgb.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qrgba64.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtgui-config.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtguiexports.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtguiglobal.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtransform.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qwindowdefs.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qwindowdefs_win.h
- mdp:D:/QTcoding/SmartMeet/avrecorder.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/avcodec.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec_desc.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec_id.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec_par.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/defs.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/packet.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/version.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/version_major.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavdevice/avdevice.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavdevice/version.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavdevice/version_major.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/avformat.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/avio.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/version.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/version_major.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/attributes.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/audio_fifo.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/avconfig.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/avutil.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/buffer.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/channel_layout.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/common.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/dict.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/error.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/frame.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/hwcontext.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/intfloat.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/log.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/macros.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mathematics.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mem.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/opt.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixfmt.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/rational.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/samplefmt.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/time.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/version.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswresample/swresample.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswresample/version.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswresample/version_major.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/swscale.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version.h
- mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version_major.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QAbstractSocket
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QNetworkProxy
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QNetworkRequest
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QSslConfiguration
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QSslError
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qabstractsocket.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qhostaddress.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qhttpheaders.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qnetworkproxy.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qnetworkrequest.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qssl.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslcertificate.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslconfiguration.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslerror.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslsocket.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtcpsocket.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtnetwork-config.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtnetworkexports.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtnetworkglobal.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/QWebSocket
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qtwebsocketsexports.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qwebsocket.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qwebsocketprotocol.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qwebsockets_global.h
+ mdp:D:/QTcoding/SmartMeet/rtcsignaling.h
+D:/QTcoding/SmartMeet/audiocapture.cpp
 D:/QTcoding/SmartMeet/mainwindow.h
  mmc:Q_OBJECT
  mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/calib3d.hpp
@@ -1044,12 +925,14 @@ D:/QTcoding/SmartMeet/mainwindow.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/error.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/frame.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/hwcontext.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/imgutils.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/intfloat.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/log.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/macros.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mathematics.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mem.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/opt.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixdesc.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixfmt.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/rational.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/samplefmt.h
@@ -1061,16 +944,120 @@ D:/QTcoding/SmartMeet/mainwindow.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/swscale.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version.h
  mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version_major.h
-D:/QTcoding/SmartMeet/rtcsignaling.h
+D:/QTcoding/SmartMeet/avrecorder.h
  mmc:Q_OBJECT
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QFlags
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QJsonDocument
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QJsonObject
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/calib3d.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/affine.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/async.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/base.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/bufferpool.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/check.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cuda.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cuda.inl.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cuda_types.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cv_cpu_dispatch.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvdef.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvstd.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvstd.inl.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/cvstd_wrapper.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/fast_math.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/hal/interface.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/mat.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/mat.inl.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/matx.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/neon_utils.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/operations.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/optim.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/ovx.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/persistence.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/saturate.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/traits.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/types.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/utility.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/version.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/core/vsx_utils.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/dict.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/dnn.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/dnn.inl.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/layer.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/utils/inference_engine.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/dnn/version.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/features2d.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/all_indices.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/allocator.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/any.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/autotuned_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/composite_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/config.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/defines.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/dist.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/dynamic_bitset.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/flann_base.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/general.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/ground_truth.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/heap.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/hierarchical_clustering_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/index_testing.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/kdtree_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/kdtree_single_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/kmeans_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/linear_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/logger.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/lsh_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/lsh_table.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/matrix.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/miniflann.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/nn_index.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/params.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/random.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/result_set.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/sampling.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/saving.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/flann/timer.h
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/highgui.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/imgcodecs.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/imgproc.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/imgproc/segmentation.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/ml.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/ml/ml.inl.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/aruco_board.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/aruco_detector.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/aruco_dictionary.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/barcode.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/charuco_detector.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/detection_based_tracker.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/face.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/objdetect/graphical_code_detector.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/opencv.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/opencv_modules.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/photo.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/blenders.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/camera.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/exposure_compensate.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/matchers.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/motion_estimators.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/seam_finders.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/util.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/util_inl.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/warpers.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/detail/warpers_inl.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/stitching/warpers.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/video.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/video/background_segm.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/video/tracking.hpp
+ mdp:D:/Opencv/opencv-4.8.0-windows/opencv/build/include/opencv2/videoio.hpp
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QDeadlineTimer
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QMutex
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QObject
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QSharedDataPointer
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QQueue
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QString
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QUrl
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QVariant
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QThread
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QWaitCondition
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q17memory.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20functional.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20iterator.h
@@ -1078,7 +1065,6 @@ D:/QTcoding/SmartMeet/rtcsignaling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20type_traits.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q20utility.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q23utility.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/q26numeric.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qalgorithms.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qanystringview.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qarraydata.h
@@ -1093,9 +1079,6 @@ D:/QTcoding/SmartMeet/rtcsignaling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qbytearrayalgorithms.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qbytearraylist.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qbytearrayview.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcalendar.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcborcommon.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcborvalue.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qchar.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcompare.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcompare_impl.h
@@ -1106,13 +1089,10 @@ D:/QTcoding/SmartMeet/rtcsignaling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontainerfwd.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontainerinfo.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontainertools_impl.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcontiguouscache.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qcryptographichash.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdarwinhelpers.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdatastream.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdatetime.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdebug.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qendian.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qdeadlinetimer.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qelapsedtimer.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qexceptionhandling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qflags.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qfloat16.h
@@ -1122,26 +1102,21 @@ D:/QTcoding/SmartMeet/rtcsignaling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qgenericatomic.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qglobal.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qglobalstatic.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qhash.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qhashfunctions.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiodevice.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiodevicebase.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiterable.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qiterator.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsondocument.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsonobject.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsonparseerror.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qjsonvalue.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlatin1stringview.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qline.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlist.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlocale.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qlogging.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmalloc.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmap.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmargins.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmath.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmetacontainer.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmetatype.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qminmax.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qmutex.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qnamespace.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qnumeric.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qobject.h
@@ -1150,16 +1125,14 @@ D:/QTcoding/SmartMeet/rtcsignaling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qobjectdefs_impl.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qoverload.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qpair.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qpoint.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qprocessordetection.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qqueue.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qrect.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qrefcount.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qregularexpression.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qscopedpointer.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qscopeguard.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qset.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qshareddata.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qshareddata_impl.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qsharedpointer.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qsharedpointer_impl.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qsize.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qspan.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qstdlibdetection.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qstring.h
@@ -1186,52 +1159,84 @@ D:/QTcoding/SmartMeet/rtcsignaling.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtdeprecationdefinitions.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtdeprecationmarkers.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtenvironmentvariables.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtextstream.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtformat_impl.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qthread.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtmetamacros.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtnoop.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtpreprocessorsupport.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtresource.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtsan_impl.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qttranslation.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qttypetraits.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtversion.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtversionchecks.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtypeinfo.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qtypes.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qurl.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qutf8stringview.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/quuid.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qvariant.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qvarlengtharray.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qversiontagging.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qwaitcondition.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qxptype_traits.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/qyieldcpu.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QAbstractSocket
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QNetworkProxy
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QNetworkRequest
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QSslConfiguration
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QSslError
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qabstractsocket.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qhostaddress.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qhttpheaders.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qnetworkproxy.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qnetworkrequest.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qssl.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslcertificate.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslconfiguration.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslerror.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qsslsocket.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtcpsocket.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtnetwork-config.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtnetworkexports.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qtnetworkglobal.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/QWebSocket
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qtwebsocketsexports.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qwebsocket.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qwebsocketprotocol.h
- mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtWebSockets/qwebsockets_global.h
- mdp:D:/QTcoding/SmartMeet/rtcsignaling.h
-D:/QTcoding/SmartMeet/audiocapture.cpp
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/QImage
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qcolor.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qimage.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qpaintdevice.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qpixelformat.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qpolygon.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qregion.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qrgb.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qrgba64.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtgui-config.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtguiexports.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtguiglobal.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qtransform.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qwindowdefs.h
+ mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qwindowdefs_win.h
+ mdp:D:/QTcoding/SmartMeet/avrecorder.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/avcodec.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec_desc.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec_id.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/codec_par.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/defs.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/packet.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/version.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavcodec/version_major.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavdevice/avdevice.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavdevice/version.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavdevice/version_major.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/avformat.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/avio.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/version.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavformat/version_major.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/attributes.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/audio_fifo.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/avconfig.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/avutil.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/buffer.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/channel_layout.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/common.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/dict.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/error.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/frame.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/hwcontext.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/intfloat.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/log.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/macros.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mathematics.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mem.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/opt.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixfmt.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/rational.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/samplefmt.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/time.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/version.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswresample/swresample.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswresample/version.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswresample/version_major.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/swscale.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version.h
+ mdp:D:/lib/ffmpeg-7.1.1-full_build-shared/include/libswscale/version_major.h
 D:/QTcoding/SmartMeet/avsender.h
  mmc:Q_OBJECT
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QByteArray
@@ -1649,7 +1654,6 @@ D:/QTcoding/SmartMeet/videocapture.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qwindowdefs.h
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtGui/qwindowdefs_win.h
  mdp:D:/QTcoding/SmartMeet/videocapture.h
-D:/QTcoding/SmartMeet/avreceiver.cpp
 D:/QTcoding/SmartMeet/rtcengine.h
  mmc:Q_OBJECT
  mdp:D:/QT4.9.0/6.9.0/msvc2022_64/include/QtCore/QByteArray
@@ -1895,6 +1899,7 @@ D:/QTcoding/SmartMeet/rtcengine.h
  mdp:D:/lib/mrwebrtc/mrwebrtc.2.0.2/build/native/include/mrwebrtc/transceiver_interop.h
  mdp:D:/lib/mrwebrtc/mrwebrtc.2.0.2/build/native/include/mrwebrtc/video_frame.h
  mdp:D:/lib/mrwebrtc/mrwebrtc.2.0.2/build/native/include/mrwebrtc/video_track_source_interop.h
+D:/QTcoding/SmartMeet/avreceiver.cpp
 D:/QTcoding/SmartMeet/avrecorder.cpp
 D:/QTcoding/SmartMeet/avsender.cpp
 D:/QTcoding/SmartMeet/main.cpp

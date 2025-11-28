@@ -149,6 +149,7 @@ D:/QTcoding/SmartMeet/build/Desktop_Qt_6_9_0_MSVC2022_64bit-Debug/SmartMeet_auto
   D:/QT4.9.0/6.9.0/msvc2022_64/include/QtMultimedia/qtmultimedia-config.h \
   D:/QT4.9.0/6.9.0/msvc2022_64/include/QtMultimedia/qtmultimediaexports.h \
   D:/QT4.9.0/6.9.0/msvc2022_64/include/QtMultimedia/qtmultimediaglobal.h \
+  D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QHostAddress \
   D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/QUdpSocket \
   D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qabstractsocket.h \
   D:/QT4.9.0/6.9.0/msvc2022_64/include/QtNetwork/qhostaddress.h \
@@ -182,12 +183,14 @@ D:/QTcoding/SmartMeet/build/Desktop_Qt_6_9_0_MSVC2022_64bit-Debug/SmartMeet_auto
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/error.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/frame.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/hwcontext.h \
+  D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/imgutils.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/intfloat.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/log.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/macros.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mathematics.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mem.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/opt.h \
+  D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixdesc.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixfmt.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/rational.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/samplefmt.h \

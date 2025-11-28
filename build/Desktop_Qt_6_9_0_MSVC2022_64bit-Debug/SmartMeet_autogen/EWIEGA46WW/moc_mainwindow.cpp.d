@@ -374,12 +374,14 @@ D:/QTcoding/SmartMeet/build/Desktop_Qt_6_9_0_MSVC2022_64bit-Debug/SmartMeet_auto
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/error.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/frame.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/hwcontext.h \
+  D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/imgutils.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/intfloat.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/log.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/macros.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mathematics.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/mem.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/opt.h \
+  D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixdesc.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/pixfmt.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/rational.h \
   D:/lib/ffmpeg-7.1.1-full_build-shared/include/libavutil/samplefmt.h \

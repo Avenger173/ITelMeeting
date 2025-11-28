@@ -309,7 +309,6 @@ void MainWindow::on_stopAudioButton_clicked()
         audioThread->quit();
         audioThread->wait();
         disconnect(audioWorker, nullptr, this, nullptr); // 断开所有信号
-        audioWorker->cleanup(); // 线程安全退出后清理资源
         delete audioWorker;
         audioWorker = nullptr;
     }
@@ -576,23 +575,20 @@ void MainWindow::on_startReceiveButton_clicked()
         return;
     }
     qDebug()<<"[Mainwindow] 接收端已启动";
-    connect(receiver,&AVReceiver::newVideoFrame,this,[this](const QImage &img){
-        ui->remoteVideolabel->setPixmap(QPixmap::fromImage(img).scaled(
-            ui->remoteVideolabel->size(),Qt::KeepAspectRatio,Qt::SmoothTransformation));
-    });
-    connect(receiver,&AVReceiver::newAudioPCM,this,[this](const QByteArray &pcm){
-        if(!recvAudioSink){
-            QAudioDevice dev=QMediaDevices::defaultAudioOutput();
-            recvPlayFormat=dev.preferredFormat();
-            recvAudioSink=new QAudioSink(dev,recvPlayFormat,this);
-            recvAudioOutput=recvAudioSink->start();
-        }
-        if(recvAudioOutput) recvAudioOutput->write(pcm);
-    });
-    connect(receiver,&AVReceiver::logMsg,this,[this](const QString &msg){
-        qDebug()<<msg;
+    //连接远端视频帧->界面上的remoteVideoLabel
+    connect(receiver,&AVReceiver::newVideoFrame,
+            this,[this](const QImage &img){
+        ui->remoteVideolabel->setPixmap(
+            QPixmap::fromImage(img).scaled(
+                ui->remoteVideolabel->size(),
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation));
     });
 
+    //简单转发AVReceiver的日志到控制台(可选)
+    connect(receiver,&AVReceiver::logMsg,this,[](const QString &msg){
+        qDebug()<<msg;
+    });
 }
 
 

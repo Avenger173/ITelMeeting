@@ -42,8 +42,6 @@ template <> constexpr inline auto AVReceiver::qt_create_metaobjectdata<qt_meta_t
         "newVideoFrame",
         "",
         "img",
-        "newAudioPCM",
-        "pcm",
         "logMsg",
         "msg",
         "onVideoReadyRead",
@@ -55,18 +53,14 @@ template <> constexpr inline auto AVReceiver::qt_create_metaobjectdata<qt_meta_t
         QtMocHelpers::SignalData<void(const QImage &)>(1, 2, QMC::AccessPublic, QMetaType::Void, {{
             { QMetaType::QImage, 3 },
         }}),
-        // Signal 'newAudioPCM'
-        QtMocHelpers::SignalData<void(const QByteArray &)>(4, 2, QMC::AccessPublic, QMetaType::Void, {{
-            { QMetaType::QByteArray, 5 },
-        }}),
         // Signal 'logMsg'
-        QtMocHelpers::SignalData<void(const QString &)>(6, 2, QMC::AccessPublic, QMetaType::Void, {{
-            { QMetaType::QString, 7 },
+        QtMocHelpers::SignalData<void(const QString &)>(4, 2, QMC::AccessPublic, QMetaType::Void, {{
+            { QMetaType::QString, 5 },
         }}),
         // Slot 'onVideoReadyRead'
-        QtMocHelpers::SlotData<void()>(8, 2, QMC::AccessPrivate, QMetaType::Void),
+        QtMocHelpers::SlotData<void()>(6, 2, QMC::AccessPrivate, QMetaType::Void),
         // Slot 'onAudioReadyRead'
-        QtMocHelpers::SlotData<void()>(9, 2, QMC::AccessPrivate, QMetaType::Void),
+        QtMocHelpers::SlotData<void()>(7, 2, QMC::AccessPrivate, QMetaType::Void),
     };
     QtMocHelpers::UintData qt_properties {
     };
@@ -91,19 +85,16 @@ void AVReceiver::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
     if (_c == QMetaObject::InvokeMetaMethod) {
         switch (_id) {
         case 0: _t->newVideoFrame((*reinterpret_cast< std::add_pointer_t<QImage>>(_a[1]))); break;
-        case 1: _t->newAudioPCM((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
-        case 2: _t->logMsg((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 3: _t->onVideoReadyRead(); break;
-        case 4: _t->onAudioReadyRead(); break;
+        case 1: _t->logMsg((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 2: _t->onVideoReadyRead(); break;
+        case 3: _t->onAudioReadyRead(); break;
         default: ;
         }
     }
     if (_c == QMetaObject::IndexOfMethod) {
         if (QtMocHelpers::indexOfMethod<void (AVReceiver::*)(const QImage & )>(_a, &AVReceiver::newVideoFrame, 0))
             return;
-        if (QtMocHelpers::indexOfMethod<void (AVReceiver::*)(const QByteArray & )>(_a, &AVReceiver::newAudioPCM, 1))
-            return;
-        if (QtMocHelpers::indexOfMethod<void (AVReceiver::*)(const QString & )>(_a, &AVReceiver::logMsg, 2))
+        if (QtMocHelpers::indexOfMethod<void (AVReceiver::*)(const QString & )>(_a, &AVReceiver::logMsg, 1))
             return;
     }
 }
@@ -127,14 +118,14 @@ int AVReceiver::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 5)
+        if (_id < 4)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 5;
+        _id -= 4;
     }
     if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 5)
+        if (_id < 4)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 5;
+        _id -= 4;
     }
     return _id;
 }
@@ -146,14 +137,8 @@ void AVReceiver::newVideoFrame(const QImage & _t1)
 }
 
 // SIGNAL 1
-void AVReceiver::newAudioPCM(const QByteArray & _t1)
-{
-    QMetaObject::activate<void>(this, &staticMetaObject, 1, nullptr, _t1);
-}
-
-// SIGNAL 2
 void AVReceiver::logMsg(const QString & _t1)
 {
-    QMetaObject::activate<void>(this, &staticMetaObject, 2, nullptr, _t1);
+    QMetaObject::activate<void>(this, &staticMetaObject, 1, nullptr, _t1);
 }
 QT_WARNING_POP
