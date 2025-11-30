@@ -100,5 +100,9 @@ private:
 
     RtmpPusher* pusher=nullptr;
 
+    //避免重复stop导致的重复delete
+    bool audioStopped=false;
+    bool meetingStopped=false;
+
 };
 #endif // MAINWINDOW_H

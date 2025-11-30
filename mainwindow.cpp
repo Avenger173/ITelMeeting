@@ -79,7 +79,10 @@ MainWindow::~MainWindow()
 {
     qDebug()<<"[MainWindow] dtor";
     //防止用户未关闭音频采集
-    on_stopAudioButton_clicked();
+    if(!meetingStopped){
+        on_stopAudioButton_clicked();
+    }
+
     if (playSwrCtx) {
         swr_free(&playSwrCtx);
         playSwrCtx = nullptr;
@@ -304,13 +307,24 @@ void MainWindow::on_startAudioButton_clicked()
 void MainWindow::on_stopAudioButton_clicked()
 {
 
+    //如果已经停过一次了，直接返回，避免重复释放
+    if(audioStopped){
+        qDebug()<<"[Mainwindow] 音频采集已停止(重复调用忽略)";
+        return;
+    }
     if (audioWorker) {
         audioWorker->stop();
-        audioThread->quit();
-        audioThread->wait();
+        if(audioThread){
+            audioThread->quit();
+            audioThread->wait();
+        }
         disconnect(audioWorker, nullptr, this, nullptr); // 断开所有信号
         delete audioWorker;
         audioWorker = nullptr;
+    }
+    if(audioThread){
+        delete audioThread;
+        audioThread=nullptr;
     }
     if (audioSink) {
         audioSink->stop();
@@ -323,6 +337,7 @@ void MainWindow::on_stopAudioButton_clicked()
         playSwrCtx = nullptr;
     }
 
+    audioStopped=true;//标记已经清理过
     qDebug()<<"[Mainwindow]音频采集已停止";
 }
 
@@ -594,7 +609,12 @@ void MainWindow::on_startReceiveButton_clicked()
 
 void MainWindow::on_stopMeetingButton_clicked()
 {
-    //先停止音频采集（如果正在采集）
+    if(meetingStopped){
+        qDebug()<<"[Mainwindow] 会议已停止重复调用忽略)";
+        return;
+    }
+
+    //1.先停止音频采集（如果正在采集）
     on_stopAudioButton_clicked();
     //2.停止视频采集线程
     if(videoWorker&&videoThread){
@@ -625,6 +645,8 @@ void MainWindow::on_stopMeetingButton_clicked()
         delete pusher;
         pusher=nullptr;
     }
+
+    meetingStopped=true;
     qDebug()<<"[Mainwindow]会议已结束";
 }
 

@@ -56,12 +56,21 @@ private:
     AVFrame *vFrame=nullptr;
     AVPacket *pkt=nullptr;
     SwsContext *sws=nullptr;
+    //保存解析到的SPS/PPS，用于给解码器初始化
+    QByteArray sps_;
+    QByteArray pps_;
+    bool haveVConf=false;
+
     //处理收到的一个完整UDP包（单包=一帧）
     void processVideoPacket(const QByteArray &data);
     void processAudioPacket(const QByteArray &data);
 
     bool ensureVideoDecoder();
     void freeDecoders();
+
+    //H.264 AnnexB工具函数（从RtmpPusher那边“平移”一份过来）
+    static int findStartCode(const uint8_t* p,int end,int &off);
+    static void parseH264AnnexBForSpsPps(const uint8_t *data,int size,QByteArray &sps,QByteArray &pps,bool &isKeyFrame);
 
 };
 

@@ -103,27 +103,61 @@ void AVReceiver::processVideoPacket(const QByteArray &data)
     quint32 totalSize;
     s>>frameId>>chunkId>>chunkCount>>ptsMs>>totalSize;
 
-    QByteArray es=data.mid(16);//裁掉头部，剩下就是H264 NALU
+    QByteArray es=data.mid(16);//裁掉头部，剩下就是H264 ES
     if(es.isEmpty())
         return;
 
+    const uint8_t* raw=reinterpret_cast<const uint8_t*>(es.constData());
+    int rawSize=es.size();
+
+    //1)从这一帧里尝试解析SPS/PPS和是否为关键帧
+    QByteArray sps,pps;
+    bool isKey=false;
+    parseH264AnnexBForSpsPps(raw,rawSize,sps,pps,isKey);
+    //2)如果还没视频配置，且这帧里带了SPS/PPS,就记下来
+    if(!haveVConf){
+        if(!sps.isEmpty()&&!pps.isEmpty()){
+            sps_=sps;
+            pps_=pps;
+            haveVConf=true;
+
+            qDebug()<<"[AVReceiver] 捕获到SPS/PPS,开始初始化解码器配置";
+            //可以选择先喂一遍SPS/PPS
+            AVPacket confPkt;
+            av_init_packet(&confPkt);
+            confPkt.data=reinterpret_cast<uint8_t*>(sps_.data());
+            confPkt.size=sps_.size();
+            avcodec_send_packet(vDecCtx,&confPkt);
+            confPkt.data=reinterpret_cast<uint8_t*>(pps_.data());
+            confPkt.size=pps_.size();
+            avcodec_send_packet(vDecCtx,&confPkt);
+        }else{
+            //还没拿到SPS/PPS之前的帧一律丢弃
+            return;
+        }
+    }
+
+    //3)正常送当前帧
     av_packet_unref(pkt);
-    pkt->data=const_cast<uint8_t*>(
-        reinterpret_cast<const uint8_t*>(es.constData()));
-    pkt->size=es.size();
+    pkt->data=const_cast<uint8_t*>(raw);
+    pkt->size=rawSize;
 
     int ret=avcodec_send_packet(vDecCtx,pkt);
     if(ret<0){
-        qWarning()<<"[AVReceiver] send_packet失败"<<ret;
+        char err[128];
+        av_strerror(ret,err,sizeof(err));
+        qWarning()<<"[AVReceiver] send_packet失败"<<ret<<"msg:"<<err;
         return;
     }
-
+    //4)把可用的帧都取出来，转成QImage,发给UI
     while(ret>=0){
         ret=avcodec_receive_frame(vDecCtx,vFrame);
         if(ret==AVERROR(EAGAIN)||ret==AVERROR_EOF)
             break;
         if(ret<0){
-            qWarning()<<"[AVReceiver] receive_frame失败"<<ret;
+            char err[128];
+            av_strerror(ret,err,sizeof(err));
+            qWarning()<<"[AVReceiver] receive_frame失败"<<ret<<"msg:"<<err;
             break;
         }
 
@@ -217,5 +251,64 @@ void AVReceiver::freeDecoders()
     if(vDecCtx){
         avcodec_free_context(&vDecCtx);
         vDecCtx=nullptr;
+    }
+}
+
+int AVReceiver::findStartCode(const uint8_t *p, int end, int &off)
+{
+    for(int i=off;i+3<end;++i){
+        //00 00 01或00 00 00 01
+        if(p[i]==0x00&&p[i+1]==0x00&&
+            ((p[i+2]==0x00)||(p[i+2]==0x00&&p[i+3]==0x01))){
+            if(p[i+2]==0x00){
+                off=i+3;
+            }else{
+                off=i+4;
+            }
+            return i;
+        }
+    }
+    return -1;
+}
+
+void AVReceiver::parseH264AnnexBForSpsPps(const uint8_t *data, int size, QByteArray &sps, QByteArray &pps, bool &isKeyFrame)
+{
+    sps.clear();
+    pps.clear();
+    isKeyFrame=false;
+
+    int off=0;
+    while(true){
+        int start=findStartCode(data,size,off);
+        if(start<0) break;
+        int nextOff=off;
+        int nextStart=findStartCode(data,size,nextOff);
+        int nalStart=off;
+        int nalEnd=(nextStart<0 ? size : nextStart);
+
+        if(nalStart>=nalEnd) break;
+
+        uint8_t nalHeader=data[nalStart];
+        uint8_t nalType=nalHeader&0x1F;
+
+        const uint8_t *nalPtr=data+nalStart;
+        int nalSize=nalEnd-nalStart;
+
+        switch(nalType){
+        case 7://SPS
+            sps=QByteArray(reinterpret_cast<const char*>(nalPtr),nalSize);
+            break;
+        case 8://PPS
+            pps=QByteArray(reinterpret_cast<const char*>(nalPtr),nalSize);
+            break;
+        case 5://IDR
+            isKeyFrame=true;
+            break;
+        default:
+            break;
+        }
+
+        off=nextOff;
+        if(nextStart<0) break;
     }
 }
