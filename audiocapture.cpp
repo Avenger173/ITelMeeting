@@ -40,8 +40,21 @@ bool AudioCapture::startCapture(const QString &deviceName, bool saveAudio, bool 
 
     const AVInputFormat *inputFormat = av_find_input_format("dshow");
     AVDictionary *options = nullptr;
-    av_dict_set(&options, "rtbufsize", "100M", 0);
+    av_dict_set(&options,"sample_rate","44100",0);
+    av_dict_set(&options,"channels","1",0);
+    //尽量让设备给小包(单位ms)
+    av_dict_set(&options,"audio_buffer_size","20",0);
+    //保持较小缓冲，避免半秒一卡
+    av_dict_set(&options,"rtbufsize","8M",0);
+    av_dict_set(&options,"thread_queue_size","64",0);
 
+    fmtCtx=avformat_alloc_context();
+    if(!fmtCtx){
+        emit logMessage("创建AVFormatContext失败");
+        return false;
+    }
+    fmtCtx->interrupt_callback.callback=&AudioCapture::interruptCallback;
+    fmtCtx->interrupt_callback.opaque=this;
     if (avformat_open_input(&fmtCtx, deviceName.toStdString().c_str(), inputFormat, &options) < 0) {
         emit logMessage("无法打开音频设备");
         cleanup();
@@ -161,7 +174,9 @@ void AudioCapture::captureLoop()
     running = true;
 
     while (running) {
-        if (av_read_frame(fmtCtx, pkt) < 0) {
+        int readRet=av_read_frame(fmtCtx,pkt);
+        if(readRet<0){
+            if(!running.load()) break;
             continue;
         }
 
@@ -205,17 +220,29 @@ void AudioCapture::captureLoop()
 
                 QByteArray outBuffer((const char *)convertedSamples[0], outBytes);
 
-                // 只通过信号分发音频数据
-                emit audioFrameReady(outBuffer);
+                //按1024样本切块（≈23ms）,降低延迟
+                const int chunkSample=1024;
+                const int chunkBytes=chunkSample*2;//S16mono=>2bytes
+                int offset=0;
+                const int outRate=44100;
+                while(offset<outBytes){
+                    int n=qMin(chunkBytes,outBytes-offset);
+                    QByteArray chunk(outBuffer.constData()+offset,n);
 
-                // 保存
-                if (enableSave && outFile.isOpen()) {
-                    outFile.write(outBuffer);
-                    outFile.flush();
-                    totalAudioBytes += outBuffer.size();
+
+                    // 只通过信号分发音频数据
+                    emit audioFrameReady(chunk);
+
+                    // 保存
+                    if (enableSave && outFile.isOpen()) {
+                        outFile.write(chunk);
+                        totalAudioBytes += chunk.size();
+                    }
+                    offset+=n;
                 }
-                // 新增：日志，方便调试
-                emit logMessage(QString("采集到音频帧，字节数: %1").arg(outBuffer.size()));
+
+                // 日志，方便调试
+                // emit logMessage(QString("采集到音频帧，字节数: %1").arg(outBuffer.size()));
             }
 
             av_freep(&convertedSamples[0]);
@@ -231,6 +258,13 @@ void AudioCapture::captureLoop()
     av_packet_free(&pkt);
 
     emit logMessage("音频采集线程已退出");
+}
+
+int AudioCapture::interruptCallback(void *opaque)
+{
+    auto self=static_cast<AudioCapture*>(opaque);
+    if(!self) return 0;
+    return self->running.load()?0:1;
 }
 
 

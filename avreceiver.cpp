@@ -16,8 +16,55 @@ AVReceiver::~AVReceiver()
     freeDecoders();
 }
 
+static int findStartCodePos(const uint8_t* p,int size,int from){
+    for(int i=from;i+3<size;++i){
+        //00 00 01
+        if(p[i]==0&&p[i+1]==0&&p[i+2]==1) return i;
+        //00 00 00 01
+        if(i+4<size&&p[i]==0&&p[i+1]==0&&p[i+2]==0&&p[i+3]==1) return i;
+    }
+    return -1;
+}
+
+static int startCodeLen(const uint8_t* p,int pos,int size){
+    if(pos+3<size&&p[pos]==0&&p[pos+1]==0&&p[pos+2]==1) return 3;
+    if(pos+4<size&&p[pos]==0&&p[pos+1]==0&&p[pos+2]==0&&p[pos+3]==1) return 4;
+    return 0;
+}
+
+//从AnnexB数据里：扫描所有NAL,提取SPS(type7)/PPS(type8)
+static void extractSpsPpsFromAnnexB(const QByteArray& es,QByteArray& outSps,QByteArray& outPps){
+    const uint8_t* p=reinterpret_cast<const uint8_t*>(es.constData());
+    const int n=es.size();
+    int pos=0;
+
+    while(true){
+        int sc=findStartCodePos(p,n,pos);
+        if(sc<0) break;
+        int scl=startCodeLen(p,sc,n);
+        int nalStart=sc+scl;
+        if(nalStart>=n) break;
+
+        int next=findStartCodePos(p,n,nalStart);
+        int nalEnd=(next<0)?n:next;
+
+        int nalType=p[nalStart]&0x1F;
+
+        if(nalType==7){
+            //SPS
+            outSps=es.mid(sc,nalEnd-sc);
+        }else if(nalType==8){
+            //PPS
+            outPps=es.mid(sc,nalEnd-sc);
+        }
+
+        pos=nalEnd;
+    }
+}
+
 bool AVReceiver::start(const QString &host, int videoPort,int audioPort)
 {
+    m_stopping=false;
     if(videoSocket||audioSocket){
         emit logMsg("[AVReceiver] 已经启动");
         return false;
@@ -51,20 +98,47 @@ bool AVReceiver::start(const QString &host, int videoPort,int audioPort)
 
 void AVReceiver::stop()
 {
+    m_stopping=true;
+
     if(videoSocket){
+        disconnect(videoSocket,nullptr,this,nullptr);
         videoSocket->close();
-        videoSocket->deleteLater();
+        delete videoSocket;
         videoSocket=nullptr;
     }
     if(audioSocket){
+        disconnect(audioSocket,nullptr,this,nullptr);
         audioSocket->close();
-        audioSocket->deleteLater();
+        delete audioSocket;
         audioSocket=nullptr;
     }
+
+    if(sws){
+        sws_freeContext(sws);
+        sws=nullptr;
+    }
+    if(pkt){
+        av_packet_free(&pkt);
+        pkt=nullptr;
+    }
+    if(vFrame){
+        av_frame_free(&vFrame);
+        vFrame=nullptr;
+    }
+
+    sps_.clear();
+    pps_.clear();
 }
 
 void AVReceiver::onVideoReadyRead()
 {
+    if(m_stopping.load()){
+        //丢掉积压数据，避免退出时还继续解码/发信号
+        while(videoSocket&&videoSocket->hasPendingDatagrams()){
+            videoSocket->receiveDatagram();
+        }
+        return;
+    }
     while(videoSocket&&videoSocket->hasPendingDatagrams()){
         QByteArray data;
         data.resize(videoSocket->pendingDatagramSize());
@@ -75,6 +149,12 @@ void AVReceiver::onVideoReadyRead()
 
 void AVReceiver::onAudioReadyRead()
 {
+    if(m_stopping.load()){
+        while(audioSocket&&audioSocket->hasPendingDatagrams()){
+            audioSocket->receiveDatagram();
+        }
+        return;
+    }
     while(audioSocket&&audioSocket->hasPendingDatagrams()){
         QByteArray data;
         data.resize(audioSocket->pendingDatagramSize());
@@ -104,25 +184,58 @@ void AVReceiver::processVideoPacket(const QByteArray &data)
     s>>frameId>>chunkId>>chunkCount>>ptsMs>>totalSize;
 
     QByteArray es=data.mid(16);//裁掉头部，剩下就是H264 ES
-    if(es.isEmpty())
-        return;
+    if(es.isEmpty()) return;
+
+    auto hex8=es.left(8).toHex();
+    if(hex8.startsWith("0000000167")||hex8.startsWith("0000000168")||hex8.startsWith("00000167")||hex8.startsWith("00000168")){
+        qDebug()<<"[AVReceiver] got config NAL begin="<<hex8<<"size="<<es.size();
+    }
+
+    static int printed=0;
+    if(printed<20){//只打印前20包，够定位
+        qDebug()<<"[AVReceiver] video datagram size="<<data.size()
+                 <<"es size="<<es.size()
+                 <<"first16="<<es.left(16).toHex();
+        printed++;
+    }
 
     const uint8_t* raw=reinterpret_cast<const uint8_t*>(es.constData());
     int rawSize=es.size();
 
     //1)从这一帧里尝试解析SPS/PPS和是否为关键帧
+    QByteArray decodePayload;//最终喂给解码器的数据（尽量转为AnnextB）
     QByteArray sps,pps;
     bool isKey=false;
-    parseH264AnnexBForSpsPps(raw,rawSize,sps,pps,isKey);
+
+    const bool looksLikeAnnexB=(rawSize>=4)&&((raw[0]==0x00&&raw[1]==0x00&&raw[2]==0x01)||
+                                            (raw[0]==0x00&&raw[1]==0x00&&raw[2]==0x00&&raw[3]==0x01));
+    if(looksLikeAnnexB){
+        decodePayload=es;
+        extractSpsPpsFromAnnexB(es,sps,pps);
+
+        if(!sps.isEmpty()||!pps.isEmpty()){
+            qDebug()<<"[AVReceiver] nal scan:sps="<<sps.size()<<"pps="<<pps.size()
+                     <<"head"<<es.left(8).toHex();
+        }
+    }else{
+        //尝试把AVCC转为AnnexB,并从中抓SPS/PPS
+        if(!avccToAnnexBAndExtract(raw,rawSize,decodePayload,sps,pps,isKey)){
+            qWarning()<<"[AVReceiver] H264 payload format unknown,drop,first4="
+                       <<QByteArray(es.constData(),qMin(4,es.size())).toHex();
+            return;
+        }
+    }
     //2)如果还没视频配置，且这帧里带了SPS/PPS,就记下来
     if(!haveVConf){
-        if(!sps.isEmpty()&&!pps.isEmpty()){
-            sps_=sps;
-            pps_=pps;
-            haveVConf=true;
+            //允许分开拿到SPS/PPS
+        if(!sps.isEmpty())  sps_=sps;
+        if(!pps.isEmpty())  pps_=pps;
 
-            qDebug()<<"[AVReceiver] 捕获到SPS/PPS,开始初始化解码器配置";
-            //可以选择先喂一遍SPS/PPS
+        if(!sps_.isEmpty()&&!pps_.isEmpty()){
+            haveVConf=true;
+            qDebug()<<"[AVReceiver] 捕获到SPS/PPS,开始初始化解码器配置"
+                     <<"sps= "<<sps_.size()<<"pps="<<pps_.size();
+            //执行解码器初始化逻辑
             AVPacket confPkt;
             av_init_packet(&confPkt);
             confPkt.data=reinterpret_cast<uint8_t*>(sps_.data());
@@ -139,8 +252,8 @@ void AVReceiver::processVideoPacket(const QByteArray &data)
 
     //3)正常送当前帧
     av_packet_unref(pkt);
-    pkt->data=const_cast<uint8_t*>(raw);
-    pkt->size=rawSize;
+    pkt->data=reinterpret_cast<uint8_t*>(decodePayload.data());
+    pkt->size=decodePayload.size();
 
     int ret=avcodec_send_packet(vDecCtx,pkt);
     if(ret<0){
@@ -257,15 +370,17 @@ void AVReceiver::freeDecoders()
 int AVReceiver::findStartCode(const uint8_t *p, int end, int &off)
 {
     for(int i=off;i+3<end;++i){
-        //00 00 01或00 00 00 01
+        //匹配00 00 01或00 00 00 01
         if(p[i]==0x00&&p[i+1]==0x00&&
-            ((p[i+2]==0x00)||(p[i+2]==0x00&&p[i+3]==0x01))){
-            if(p[i+2]==0x00){
+            (p[i+2]==0x01||(p[i+2]==0x00&&p[i+3]==0x01))){
+            if(p[i+2]==0x01){
+                //00 00 01->起始码后的位置
                 off=i+3;
             }else{
+                //00 00 00 01->起始码后的位置
                 off=i+4;
             }
-            return i;
+            return i;//返回起始码开始的位置
         }
     }
     return -1;
@@ -311,4 +426,40 @@ void AVReceiver::parseH264AnnexBForSpsPps(const uint8_t *data, int size, QByteAr
         off=nextOff;
         if(nextStart<0) break;
     }
+}
+
+bool AVReceiver::avccToAnnexBAndExtract(const uint8_t *data, int size, QByteArray &annexb, QByteArray &sps, QByteArray &pps, bool &isKeyFrame)
+{
+    annexb.clear();
+    sps.clear();
+    pps.clear();
+    isKeyFrame=false;
+    if(!data||size<5) return false;
+
+    //默认按4字节长度前缀解析
+    int pos=0;
+    while(pos+4<=size){
+        const uint32_t nalulen=(uint32_t(data[pos])<<24)|
+                                (uint32_t(data[pos+1])<<16)|
+                                (uint32_t(data[pos+2])<<8)|
+                                uint32_t(data[pos+3]);
+        pos+=4;
+        if(nalulen==0) continue;
+        if(pos+int(nalulen)>size) return false;
+
+        const uint8_t nalType=data[pos]&0x1F;
+        if(nalType==7){
+            sps=QByteArray(reinterpret_cast<const char*>(data+pos),int(nalulen));
+        }else if(nalType==8){
+            pps=QByteArray(reinterpret_cast<const char*>(data+pos),int(nalulen));
+        }else if(nalType==5){
+            isKeyFrame=true;
+        }
+        //写AnnexB:00 00 00 01+NALU
+        annexb.append("\x00\x00\x00\x01",4);
+        annexb.append(reinterpret_cast<const char*>(data+pos),int(nalulen));
+
+        pos+=int(nalulen);
+    }
+    return !annexb.isEmpty();
 }

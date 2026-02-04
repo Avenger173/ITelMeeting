@@ -44,6 +44,13 @@ void AVSender::stop()
 
 void AVSender::sendEncodedVideo(const QByteArray &encodePkt, quint32 pts_ms)
 {
+    static bool printedCfg=false;
+    if(!printedCfg){
+        QByteArray first=encodePkt.left(8).toHex();
+        qDebug()<<"[AVSender] first pkt head="<<first
+                 <<"size="<<encodePkt.size();
+        printedCfg=true;
+    }
     //编码数据包需要附加头部信息
     QByteArray datagram;
     QDataStream stream(&datagram,QIODevice::WriteOnly);
@@ -89,7 +96,7 @@ void AVSender::sendPacketInternal(const QByteArray &datagram, quint16 port)
         return;
     }
     qint64 written=m_socket->writeDatagram(datagram,m_destAddr,port);
-    qDebug()<<"[AVSender] writeDatagram->size="<<datagram.size()<<"sent="<<written<<"to"<<m_destAddr.toString()<<":"<<port;
+    // qDebug()<<"[AVSender] writeDatagram->size="<<datagram.size()<<"sent="<<written<<"to"<<m_destAddr.toString()<<":"<<port;
     if(written==-1){
         qWarning()<<"[AVSender]数据发送失败:"<<m_socket->errorString();
     }

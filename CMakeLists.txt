@@ -53,6 +53,9 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         avsender.h avsender.cpp
         avreceiver.h avreceiver.cpp
         rtmppusher.h rtmppusher.cpp
+        avnetencoder.h avnetencoder.cpp
+        rtmppuller.h rtmppuller.cpp
+        avaudioencoder.h avaudioencoder.cpp
 
 
 

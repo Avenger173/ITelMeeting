@@ -5,7 +5,7 @@
 #include<QMutex>
 #include<QByteArray>
 #include<QString>
-
+#include<QMutex>
 extern "C"{
 #include<libavcodec/avcodec.h>
 #include<libavformat/avformat.h>
@@ -33,6 +33,7 @@ public slots:
     void pushEncodeAudio(const QByteArray& pktData,quint32 pts_ms);
 private:
     bool opened_=false;
+    bool headerWritten_=false;
     QString url_;
     //复用器上下文(flv+rtmp)
     AVFormatContext* fmtCtx_=nullptr;
@@ -48,6 +49,11 @@ private:
     bool aFirst_=true;
     int64_t vStart_=0;
     int64_t aStart_=0;
+
+    bool basePtsInited=false;
+    quint32 basePtsMs=0;
+    quint32 lastVideoMs=0;
+    quint32 lastAudioMs=0;
     //工具
     bool writeHeader_(int fps,int sampleRate);
     void writeInterleaved_(AVPacket* pkt,AVStream* st,AVRational inTb);
@@ -71,6 +77,7 @@ private:
 
     //禁用拷贝
     Q_DISABLE_COPY(RtmpPusher)
+    QMutex writeMtx_;
 signals:
 };
 

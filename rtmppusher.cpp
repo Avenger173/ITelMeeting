@@ -3,6 +3,9 @@
 
 //工具函数前向声明:查找H.264 AnnexB起始码(00 00 00 01或00 00 01)
 static inline int findStartCode(const uint8_t *p, int end, int &off);
+static QByteArray annexBToAvcc(const uint8_t* data, int size);
+static bool hasVclNal(const uint8_t* data,int size);
+static inline bool looksAnnexB(const uint8_t* data,int size);
 
 RtmpPusher::RtmpPusher(QObject *parent)
     : QObject{parent}
@@ -19,6 +22,13 @@ RtmpPusher::~RtmpPusher()
 bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)
 {
     if(opened_) return true;
+    //重新开始时必须清空旧配置
+    headerWritten_=false;
+    haveVConf=false;
+    haveAConf=false;
+    vExtra_.clear();
+    aExtra_.clear();
+
     url_=rtmpUrl;
     vFps=(fps>0 ? fps : vFps);
     aRate=(sampleRate>0 ? sampleRate : aRate);
@@ -29,9 +39,20 @@ bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)
     }
     //新建音视频流(容器流,编码在外部完成)
     vStream_=avformat_new_stream(fmtCtx_,nullptr);
-    aStream_=avformat_new_stream(fmtCtx_,nullptr);
-    if(!vStream_||!aStream_){
+    if(aRate>0&&aCh>0){
+        aStream_=avformat_new_stream(fmtCtx_,nullptr);
+    }else{
+        aStream_=nullptr;//不启用音频
+    }
+
+    if(!vStream_||((aRate>0&&aCh>0)&&!aStream_)){
         qWarning()<<"[RtmpPusher] avformat_new_stream failed";
+        if(fmtCtx_){
+            avformat_free_context(fmtCtx_);
+            fmtCtx_=nullptr;
+        }
+        vStream_=nullptr;
+        aStream_=nullptr;
         return false;
     }
     //告诉容器:视频是H264，时间基于毫秒(后续做rescale)
@@ -44,24 +65,52 @@ bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)
 
 
     //音频是AAC
-    aStream_->id=1;
-    aStream_->time_base=AVRational{1,1000};
-    aStream_->codecpar->codec_type=AVMEDIA_TYPE_AUDIO;
-    aStream_->codecpar->codec_id=AV_CODEC_ID_AAC;
-    aStream_->codecpar->sample_rate=aRate;
-    aStream_->codecpar->format=AV_SAMPLE_FMT_FLTP;//典型AAC
-    av_channel_layout_default(&aStream_->codecpar->ch_layout,aCh);//当前为单声道
+    if(aStream_){
+        aStream_->id=1;
+        aStream_->time_base=AVRational{1,1000};
+        aStream_->codecpar->codec_type=AVMEDIA_TYPE_AUDIO;
+        aStream_->codecpar->codec_id=AV_CODEC_ID_AAC;
+        aStream_->codecpar->sample_rate=aRate;
+        aStream_->codecpar->format=AV_SAMPLE_FMT_FLTP;//典型AAC
+        av_channel_layout_default(&aStream_->codecpar->ch_layout,aCh);//当前为单声道
+        //临时：未接入音频时也允许写header,避免拉流失败
+        aExtra_=makeAacAsc(aRate,aCh);
+        haveAConf=true;
+    }else{
+        haveAConf=false;
+    }
 
     //打开IO
     if(!(fmtCtx_->oformat->flags&AVFMT_NOFILE)){
         if(avio_open(&fmtCtx_->pb,url_.toUtf8().constData(),AVIO_FLAG_WRITE)<0){
             qWarning()<<"[RtmpPusher] avio_open failed";
+            if(aStream_&&aStream_->codecpar){
+                av_channel_layout_uninit(&aStream_->codecpar->ch_layout);
+            }
+            if(fmtCtx_){
+                avformat_free_context(fmtCtx_);
+                fmtCtx_=nullptr;
+            }
+            vStream_=nullptr;
+            aStream_=nullptr;
             return false;
         }
     }
 
+    fmtCtx_->flags|=AVFMT_FLAG_FLUSH_PACKETS;
+    fmtCtx_->flags|=AVFMT_FLAG_NOBUFFER;
+    fmtCtx_->max_delay=0;
+    if(fmtCtx_->pb){
+        av_opt_set(fmtCtx_->pb,"flush_packets","1",0);
+    }
+
     vFirst_=aFirst_=true;
+    basePtsInited=false;
+    basePtsMs=0;
+    lastVideoMs=0;
+    lastAudioMs=0;
     opened_=true;
+    headerWritten_=false;
     qInfo()<<"[RtmpPusher] started->"<<url_
             <<"video"<<vW<<"x"<<vH<<"@"<<vFps
             <<"audio"<<aRate<<"Hz ch="<<aCh;
@@ -71,23 +120,44 @@ bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)
 void RtmpPusher::stop()
 {
     if(!opened_) return;
+    //先释放aStream_里你手动init过的ch_layout(必须在fmtctx_释放之前)
+    if(aStream_&&aStream_->codecpar){
+        av_channel_layout_uninit(&aStream_->codecpar->ch_layout);
+    }
     if(fmtCtx_){
-        av_write_trailer(fmtCtx_);
+        if(headerWritten_){
+            av_write_trailer(fmtCtx_);
+        }
         if(!(fmtCtx_->oformat->flags&AVFMT_NOFILE)&&fmtCtx_->pb){
             avio_closep(&fmtCtx_->pb);
         }
         avformat_free_context(fmtCtx_);
         fmtCtx_=nullptr;
     }
-    if(aStream_&&aStream_->codecpar){
-        av_channel_layout_uninit(&aStream_->codecpar->ch_layout);
-    }
+    headerWritten_=false;
+
+    //避免悬空指针
+    vStream_=nullptr;
+    aStream_=nullptr;
+
     opened_=false;
+    haveVConf=false;
+    haveAConf=false;
+    vExtra_.clear();
+    aExtra_.clear();
     qInfo()<<"RtmpPusher] stopped";
 }
 
 void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
 {
+    if(!basePtsInited){
+        basePtsMs=pts_ms;
+        basePtsInited=true;
+    }
+    pts_ms=(pts_ms>=basePtsMs)?(pts_ms-basePtsMs):0;
+    if(pts_ms<=lastVideoMs) pts_ms=lastVideoMs+1;
+    lastVideoMs=pts_ms;
+
     if(!opened_||pktData.isEmpty()) return;
 
     //1.尝试从AnnexB里解析出SPS/PPS,并确认是否为关键帧
@@ -101,22 +171,41 @@ void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
             //因为vW/vH从外部知道，不强依赖解析sps来推断
         }
     }
+
+    const uint8_t* raw=reinterpret_cast<const uint8_t*>(pktData.constData());
+    const int rawSize=pktData.size();
+    const bool vclPresent=hasVclNal(raw,rawSize);
     //2.如果两边config都就绪,且还没写header->写
     if(!fmtCtx_->nb_streams||!ensureHeaderWritten()){
         //ensureHeaderWritten();内部负责写header,只写一次，写不出来就先等
         return;
     }
+    if(!vclPresent){
+        //只包含SPS/PPS/SEI等配置包，不当作视频帧发到RTMP
+        return;
+    }
     //3.正常送包
+    QByteArray payload=pktData;
+    bool looksAnnexB=rawSize>=4&&
+                       ((raw[0]==0&&raw[1]==0&&raw[2]==1)||(raw[0]==0&&raw[1]==0&&raw[2]==0&&raw[3]==1));
+    if(looksAnnexB){
+        payload=annexBToAvcc(raw,rawSize);
+        if(payload.isEmpty()) return;
+    }
+    if(payload.size()<=9) return;//避免ZLM断言崩溃
+
     AVPacket pkt;
     av_init_packet(&pkt);
-    pkt.data=const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(pktData.constData()));
-    pkt.size=pktData.size();
+    pkt.data=reinterpret_cast<uint8_t*>(payload.data());
+    pkt.size=payload.size();
+    if(isKey) pkt.flags|=AV_PKT_FLAG_KEY;
     pkt.pts=pkt.dts=pts_ms;//毫秒信号
     //key:给容器一个大致的duration(可选)
     pkt.duration=0;
 
     av_packet_rescale_ts(&pkt,AVRational{1,1000},vStream_->time_base);
     pkt.stream_index=vStream_->index;
+    QMutexLocker locker(&writeMtx_);
     int r=av_interleaved_write_frame(fmtCtx_,&pkt);
     if(r<0){
         char err[128];
@@ -127,7 +216,15 @@ void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
 
 void RtmpPusher::pushEncodeAudio(const QByteArray &pktData, quint32 pts_ms)
 {
-    if(!opened_||pktData.isEmpty()) return;
+    if(!basePtsInited){
+        basePtsMs=pts_ms;
+        basePtsInited=true;
+    }
+    pts_ms=(pts_ms>=basePtsMs)?(pts_ms-basePtsMs):0;
+    if(pts_ms<=lastAudioMs) pts_ms=lastAudioMs+1;
+    lastAudioMs=pts_ms;
+
+    if(!opened_||pktData.isEmpty()||!aStream_) return;
 
     if(!haveAConf){
         aExtra_=makeAacAsc(aRate,aCh);
@@ -143,10 +240,12 @@ void RtmpPusher::pushEncodeAudio(const QByteArray &pktData, quint32 pts_ms)
     pkt.size=pktData.size();
     pkt.pts=pkt.dts=pts_ms;//毫秒信号
     //key:给容器一个大致的duration(可选)
-    pkt.duration=0;
+    //AAC每帧通常1024样本
+    pkt.duration=av_rescale_q(1024,AVRational{1,aRate},aStream_->time_base);
 
     av_packet_rescale_ts(&pkt,AVRational{1,1000},aStream_->time_base);
     pkt.stream_index=aStream_->index;
+    QMutexLocker locker(&writeMtx_);
     int r=av_interleaved_write_frame(fmtCtx_,&pkt);
     if(r<0){
         char err[128];
@@ -174,30 +273,122 @@ void RtmpPusher::writeInterleaved_(AVPacket *pkt, AVStream *st, AVRational inTb)
 void RtmpPusher::parseH264AnnexBForSpsPps(const uint8_t *data, int size, QByteArray &sps, QByteArray &pps, bool &isKeyFrame)
 {
     isKeyFrame=false;
-    int pos=0,sc,next;
-    while((sc=findStartCode(data,size,pos))>=0){
-        int nalStart =pos;
-        int tmp=pos;
-        next =findStartCode(data,size,tmp);
-        int nalEnd=(next<0? size: next);
-        int payload=nalEnd-nalStart;
-        if(payload<=0) break;
+    if(!data||size<=0) return;
 
-        uint8_t nalType=data[nalStart]&0x1F;//H264
-        const uint8_t* nalData=data+nalStart;
-        int nalSize=payload;
+    if(looksAnnexB(data,size)){
+        int pos=0,sc,next;
+        while((sc=findStartCode(data,size,pos))>=0){
+            int nalStart=pos;
+            int tmp=pos;
+            next=findStartCode(data,size,tmp);
+            int nalEnd=(next<0?size:next);
+            int payload=nalEnd-nalStart;
+            if(payload<=0) break;
 
-        if(nalType==7){//SPS
-            sps=QByteArray(reinterpret_cast<const char*>(nalData),nalSize);
-        }else if(nalType==8){//PPS
-            pps=QByteArray(reinterpret_cast<const char*>(nalData),nalSize);
-        }else if(nalType==5){//IDR
-            isKeyFrame=true;
+            uint8_t nalType=data[nalStart]&0x1F;
+            const uint8_t* nalData=data+nalStart;
+            int nalSize=payload;
+
+            if(nalType==7) sps=QByteArray(reinterpret_cast<const char*>(nalData),nalSize);
+            else if(nalType==8) pps=QByteArray(reinterpret_cast<const char*>(nalData),nalSize);
+            else if(nalType==5) isKeyFrame=true;
+
+            pos=nalEnd;
         }
-        pos=nalEnd;
+        return;
+    }
+
+    //AVCC(length-prefixed)
+    int off=0;
+    while(off+4<=size){
+        uint32_t nalSize=(uint32_t(data[off])<<24)|
+                           (uint32_t(data[off+1])<<16)|
+                           (uint32_t(data[off+2])<<8)|
+                           uint32_t(data[off+3]);
+        off+=4;
+        if(nalSize==0||off+nalSize>size) break;
+
+        uint8_t naltype=data[off]&0x1F;
+        const uint8_t* nalData=data+off;
+
+        if(naltype==7) sps=QByteArray(reinterpret_cast<const char*>(nalData),int(nalSize));
+        else if(naltype==8) pps=QByteArray(reinterpret_cast<const char*>(nalData),int(nalSize));
+        else if(naltype==5) isKeyFrame=true;
+
+        off+=int(nalSize);
     }
 }
+static QByteArray annexBToAvcc(const uint8_t* data,int size){
+    QByteArray out;
+    if(!data||size<=0) return out;
 
+    int off=0;
+    while(true){
+        int sc=findStartCode(data,size,off);
+        if(sc<0) break;
+
+        int nalStart=off;
+        int tmp=off;
+        int nextSc=findStartCode(data,size,tmp);
+        int nalEnd=(nextSc<0)?size:nextSc;
+
+        int nalSize=nalEnd-nalStart;
+        if(nalSize>0){
+            uint32_t len=static_cast<uint32_t>(nalSize);
+            char lenBytes[4]={
+                char((len>>24)&0xFF),
+                char((len>>16)&0xFF),
+                char((len>>8)&0xFF),
+                char(len&0xFF),
+            };
+            out.append(lenBytes,4);
+            out.append(reinterpret_cast<const char*>(data+nalStart),nalSize);
+        }
+        off=nalEnd;
+    }
+    return out;
+}
+
+static bool hasVclNal(const uint8_t *data, int size){
+    if(!data||size<=0) return false;
+
+    if(looksAnnexB(data,size)){
+        int off=0;
+        while(true){
+            int sc=findStartCode(data,size,off);
+            if(sc<0) break;
+
+            int nalStart=off;
+            int tmp=off;
+            int nextsc=findStartCode(data,size,tmp);
+            int nalEnd=(nextsc<0)?size:nextsc;
+
+            int nalSize=nalEnd-nalStart;
+            if(nalSize<=0) break;
+
+            uint8_t nalType=data[nalStart]&0x1F;
+            if(nalType==1||nalType==5) return true;
+
+            off=nalEnd;
+        }
+        return false;
+    }
+
+    //AVCC
+    int off=0;
+    while(off+4<size){
+        uint32_t nalSize=(uint32_t(data[off])<<24)|(uint32_t(data[off+1])<<16)|(uint32_t(data[off+2])<<8)|uint32_t(data[off+3]);
+
+        off+=4;
+        if(nalSize==0||off+nalSize>size) break;
+
+        uint8_t nalType=data[off] &0x1F;
+        if(nalType==1||nalType==5) return true;
+
+        off+=int(nalSize);
+    }
+    return false;
+}
 QByteArray RtmpPusher::makeAvcCFromSpsPps(const QByteArray &sps, const QByteArray &pps)
 {
     QByteArray avcc;
@@ -258,12 +449,9 @@ QByteArray RtmpPusher::makeAacAsc(int sampleRate, int channles)
 
 bool RtmpPusher::ensureHeaderWritten()
 {
+    if(headerWritten_) return true;
     //条件:两边extradata都齐了
-    if(!haveVConf||!haveAConf) return false;
-    //已经写过header就不重复
-    if(fmtCtx_->pb&&(fmtCtx_->flags&AVFMT_FLAG_CUSTOM_IO)==0&&fmtCtx_->streams[0]->codecpar->extradata){
-        return true;
-    }
+    if(!haveVConf||(aStream_&&!haveAConf)) return false;
     //补vStream的extradata
     if(vStream_->codecpar->extradata){
         av_free(vStream_->codecpar->extradata);
@@ -275,21 +463,30 @@ bool RtmpPusher::ensureHeaderWritten()
     memcpy(vStream_->codecpar->extradata,vExtra_.constData(),vExtra_.size());
     memset(vStream_->codecpar->extradata+vExtra_.size(),0,AV_INPUT_BUFFER_PADDING_SIZE);
     //补aStream的extradata
-    if(aStream_->codecpar->extradata){
-        av_free(aStream_->codecpar->extradata);
-        aStream_->codecpar->extradata=nullptr;
-        aStream_->codecpar->extradata_size=0;
+    if(aStream_){
+        if(aStream_->codecpar->extradata){
+            av_free(aStream_->codecpar->extradata);
+            aStream_->codecpar->extradata=nullptr;
+            aStream_->codecpar->extradata_size=0;
+        }
+        aStream_->codecpar->extradata=(uint8_t*)av_malloc(aExtra_.size()+AV_INPUT_BUFFER_PADDING_SIZE);
+        aStream_->codecpar->extradata_size=aExtra_.size();
+        memcpy(aStream_->codecpar->extradata,aExtra_.constData(),aExtra_.size());
+        memset(aStream_->codecpar->extradata+aExtra_.size(),0,AV_INPUT_BUFFER_PADDING_SIZE);
     }
-    aStream_->codecpar->extradata=(uint8_t*)av_malloc(aExtra_.size()+AV_INPUT_BUFFER_PADDING_SIZE);
-    aStream_->codecpar->extradata_size=aExtra_.size();
-    memcpy(aStream_->codecpar->extradata,aExtra_.constData(),aExtra_.size());
-    memset(aStream_->codecpar->extradata+aExtra_.size(),0,AV_INPUT_BUFFER_PADDING_SIZE);
+
 
     //现在写header(只写一次)
-    if(avformat_write_header(fmtCtx_,nullptr)<0){
+    AVDictionary* opts=nullptr;
+    av_dict_set(&opts,"rtmp_live","live",0);
+    av_dict_set(&opts,"flvflags","no_duration_filesize",0);
+    if(avformat_write_header(fmtCtx_,&opts)<0){
+        av_dict_free(&opts);
         qWarning()<<"[RtmpPusher] avformat_write_header failed(ensureHeaderWritten)";
         return false;
     }
+    av_dict_free(&opts);
+    headerWritten_=true;
     qInfo()<<"[RtmpPusher] header written (FLV with H264/AAC)";
     return true;
 }
@@ -302,4 +499,9 @@ static inline int findStartCode(const uint8_t* p,int end,int& off){
         }
     }
     return -1;
+}
+
+static inline bool looksAnnexB(const uint8_t *data, int size){
+    if(!data||size<4) return false;
+    return (data[0]==0&&data[1]==0&&data[2]==1)||(data[0]==0&&data[1]==0&&data[2]==0&&data[3]==1);
 }

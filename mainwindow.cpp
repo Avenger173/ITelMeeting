@@ -12,7 +12,11 @@
 #include<QAudioFormat>
 #include<QPainter>
 #include<QApplication>
+#include<QPointer>
 #include<libswresample/swresample.h>
+#include<QDesktopServices>
+#include<QUrl>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -78,21 +82,21 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     qDebug()<<"[MainWindow] dtor";
-    //防止用户未关闭音频采集
-    if(!meetingStopped){
-        on_stopAudioButton_clicked();
-    }
+    on_stopMeetingButton_clicked();
+
 
     if (playSwrCtx) {
         swr_free(&playSwrCtx);
         playSwrCtx = nullptr;
     }
-    if (videoWorker) {
+    if (videoWorker&&videoThread) {
         videoWorker->stop();
         videoThread->quit();
         videoThread->wait();
         delete videoWorker;
+        delete videoThread;
         videoWorker = nullptr;
+        videoThread=nullptr;
     }
 
     if(recvPlaySwrCtx){
@@ -104,67 +108,256 @@ MainWindow::~MainWindow()
         delete recvAudioSink;
         recvAudioSink=nullptr;
     }
-    delete ui;
+    auto tmp=ui;
+    ui=nullptr;
+    delete tmp;
 }
 
 void MainWindow::on_startMeetingButton_clicked()
 {
-    //初始化发送端
-    if(!sender) sender=new AVSender(this);
-
-    if(sender->start("127.0.0.1",12345,12346)){
-        qDebug()<<"[Mainwindow] 发送端已启动";
-    }else{
-        qWarning()<<"[Mainwindow] AVSender 已经在运行";
+    meetingStopped=false;
+    audioStopped=false;
+    const bool useExternalWebRtcTest=false;
+    if(videoWorker||videoThread){
+        qInfo()<<"[Mainwindow] 会议已启动（重复启动忽略）";
+        return;
     }
-
     if (!videoWorker) {
         videoWorker = new VideoCapture;
         videoThread = new QThread(this);
         videoWorker->moveToThread(videoThread);
 
         connect(videoThread, &QThread::started, videoWorker, &VideoCapture::captureLoop);
-        connect(videoWorker, &VideoCapture::frameCaptured, this, [this](const QImage &img){
-            //预览到本地label
-            ui->localVideolabel->setPixmap(QPixmap::fromImage(img).scaled(
-                ui->localVideolabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
-            if(camRecording&&recorder&&recorder->isOpen()){
-                //简单节流
-                const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
-                const qint64 interval=1000/qMax(1,recFps);
-                if(nowMs-lastPushMs>=interval){
-                    recorder->pushVideoFrame(img);
-                    lastPushMs=nowMs;
-                }
-            }
-        });
+        QPointer<QLabel> localLabel=ui->localVideolabel;
+        QPointer<MainWindow> self(this);
+        disconnect(videoWorker,&VideoCapture::frameCaptured,this,nullptr);
+        connect(videoWorker, &VideoCapture::frameCaptured, this, [self,localLabel](const QImage &img){
+            if(!self) return;
+            if(self->meetingStopped) return;
+            if(!localLabel) return;
+            //预览到本地label
+            localLabel->setPixmap(QPixmap::fromImage(img).scaled(
+                localLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
+
+            // if(camRecording&&recorder&&recorder->isOpen()){
+            //     //简单节流
+            //     const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
+            //     const qint64 interval=1000/qMax(1,recFps);
+            //     if(nowMs-lastPushMs>=interval){
+            //         recorder->pushVideoFrame(img);
+            //         lastPushMs=nowMs;
+            //     }
+            // }
+        },Qt::QueuedConnection);
 
         if (!videoWorker->open(0)) {
             QMessageBox::warning(this, "错误", "无法打开摄像头");
+            //清理:避免留下半初始化对象导致stopMeeting崩
+            videoWorker->deleteLater();
+            videoWorker=nullptr;
+            videoThread->deleteLater();
+            videoThread=nullptr;
             return;
         }
 
-        videoThread->start();
+        videoThread->start(QThread::HighPriority);
+    }
+    //RTMP联调阶段先关掉UDP发送，避免额外线程/日志压力
+    constexpr bool kEnableUdpSender=false;
+    if(kEnableUdpSender){
+        if(!sender) sender=new AVSender(this);
+        if(sender->start("127.0.0.1",12345,12346)){
+            qDebug()<<"[Mainwindow] 发送端已启动";
+        }else{
+            qWarning()<<"[Mainwindow] AVSender 已经在运行";
+        }
     }
 
-    //连接录像模块->推流模块
-    connect(recorder,&AvRecorder::videoPacketReady,sender,&AVSender::sendEncodedVideo,Qt::QueuedConnection);
-    connect(recorder,&AvRecorder::audioPacketReady,sender,&AVSender::sendEncodedAudio,Qt::QueuedConnection);
-
     //启动RTMP推流到ZLMediaKit
-    if(!pusher) pusher=new RtmpPusher(this);
-    pusher->setVideoParams(640,480,30);
-    pusher->setAudioParams(44100,1);
-    //先启动RTMP推流
-    if(!pusher->start("rtmp://127.0.0.1/live/test",30,44100)){
+    //创建编码/推流线程
+    if(!encThread){
+        encThread=new QThread(this);
+        encThread->start(QThread::HighPriority);
+    }
+    // RTMP 推流器放到encThread
+    if(!pushThread){
+        pushThread=new QThread(this);
+        pushThread->start(QThread::HighPriority);
+    }
+    if(!pusher) pusher=new RtmpPusher(nullptr);
+    pusher->moveToThread(pushThread);
+    connect(pushThread,&QThread::finished,pusher,&QObject::deleteLater);
+
+    //先启动音频
+    //Audio RTMP
+    if(!audioWorker){
+        on_startAudioButton_clicked();//复用已有的音频采集
+    }
+
+    if(audioWorker){
+        if(!audioEncThread){
+            audioEncThread=new QThread(this);
+            audioEncThread->start(QThread::HighPriority);
+        }
+        audioEnc=new AvAudioEncoder(nullptr);
+        audioEnc->moveToThread(audioEncThread);
+        connect(audioEncThread,&QThread::finished,audioEnc,&QObject::deleteLater);
+
+        bool aok=false;
+        QMetaObject::invokeMethod(audioEnc,[&](){
+            aok=audioEnc->open(44100,1);
+        },Qt::BlockingQueuedConnection);
+
+        if(!aok){
+            qWarning()<<"[Mainwindow] audio encoder open failed";
+        }
+
+        disconnect(audioWorker,&AudioCapture::audioFrameReady,audioEnc,nullptr);
+        connect(audioWorker,&AudioCapture::audioFrameReady,audioEnc,&AvAudioEncoder::pushPcm,Qt::QueuedConnection);
+
+        disconnect(audioEnc,&AvAudioEncoder::audioPacketReady,pusher,nullptr);
+        connect(audioEnc,&AvAudioEncoder::audioPacketReady,pusher,&RtmpPusher::pushEncodeAudio,Qt::QueuedConnection);
+    }
+
+    bool rtmpOk=false;
+    QMetaObject::invokeMethod(pusher,[&](){
+        pusher->setVideoParams(640,480,30);
+        pusher->setAudioParams(44100,1);
+        rtmpOk = pusher->start("rtmp://127.0.0.1/live/test",30,44100);
+    },Qt::BlockingQueuedConnection);
+
+    if(!rtmpOk){
         qWarning()<<"[Mainwindow]RTMP推流启动失败";
     }else{
         qDebug()<<"[Mainwindow]RTMP推流已启动";
     }
-    //连接"编码后"数据->推流器
-    connect(recorder,&AvRecorder::videoPacketReady,pusher,&RtmpPusher::pushEncodeVideo,Qt::QueuedConnection);
-    connect(recorder,&AvRecorder::audioPacketReady,pusher,&RtmpPusher::pushEncodeAudio,Qt::QueuedConnection);
+
+    // 编码器放到视频线程
+    if(!netEnc) netEnc=new AvNetEncoder(nullptr);
+    netEnc->moveToThread(encThread);
+    connect(encThread,&QThread::finished,netEnc,&QObject::deleteLater);
+
+    //先连输出信号，避免配置包丢失
+    // connect(netEnc,&AvNetEncoder::videoPacketReady,sender,&AVSender::sendEncodedVideo,Qt::QueuedConnection);
+    connect(netEnc,&AvNetEncoder::videoPacketReady,pusher,&RtmpPusher::pushEncodeVideo,Qt::QueuedConnection);
+
+    bool encOk=false;
+    QMetaObject::invokeMethod(netEnc,[&](){
+        encOk = netEnc->openVideo(640,480,30);
+    },Qt::BlockingQueuedConnection);
+
+    if(!encOk){
+        qWarning()<<"[Mainwindow] netEnc openVideo failed";
+        return;
+    }
+
+    //netEnc在encThread,必须Queued
+    connect(videoWorker,&VideoCapture::frameCaptured,netEnc,&AvNetEncoder::pushVideoFrame,Qt::QueuedConnection);
+
+
+    // //连接录像模块->推流模块
+    // connect(recorder,&AvRecorder::videoPacketReady,sender,&AVSender::sendEncodedVideo,Qt::QueuedConnection);
+    // connect(recorder,&AvRecorder::audioPacketReady,sender,&AVSender::sendEncodedAudio,Qt::QueuedConnection);
+
+    // //连接"编码后"数据->推流器
+    // connect(recorder,&AvRecorder::videoPacketReady,pusher,&RtmpPusher::pushEncodeVideo,Qt::QueuedConnection);
+    // connect(recorder,&AvRecorder::audioPacketReady,pusher,&RtmpPusher::pushEncodeAudio,Qt::QueuedConnection);
+}
+
+void MainWindow::on_stopMeetingButton_clicked()
+{
+    if(meetingStopped){
+        qDebug()<<"[Mainwindow] 会议已停止（重复调用忽略)";
+    }
+    meetingStopped=true;
+
+    //断开所有外部对象
+    if(receiver) disconnect(receiver,nullptr,this,nullptr);
+    //1.先停止音频采集（如果正在采集）
+    on_stopAudioButton_clicked();
+    //停止接收端(UDP收流+播放)
+    if(receiver){
+        disconnect(receiver,nullptr,this,nullptr);;//先断开，防止再触发UI更新
+        receiver->stop();
+        delete receiver;
+        receiver=nullptr;
+    }
+    //3.停止发送端
+    if(sender){
+        sender->stop();
+        delete sender;
+        sender=nullptr;
+    }
+    //停止RTMP推流
+    if(pusher){
+        QMetaObject::invokeMethod(pusher,[&](){
+            pusher->stop();
+        },Qt::BlockingQueuedConnection);
+        pusher->deleteLater();
+        pusher=nullptr;
+    }
+    if(pushThread){
+        pushThread->quit();
+        pushThread->wait();
+        delete pushThread;
+        pushThread=nullptr;
+    }
+    if(audioEnc){
+        QMetaObject::invokeMethod(audioEnc,[&](){
+            audioEnc->close();
+        },Qt::BlockingQueuedConnection);
+        audioEnc=nullptr;
+    }
+    if(audioEncThread){
+        audioEncThread->quit();
+        audioEncThread->wait();
+        delete audioEncThread;
+        audioEncThread=nullptr;
+    }
+    //编码器
+    if(netEnc){
+        QMetaObject::invokeMethod(netEnc,[&](){
+            netEnc->close();
+        },Qt::BlockingQueuedConnection);
+        netEnc=nullptr;
+    }
+
+    if(encThread){
+        encThread->quit();
+        encThread->wait();
+        delete encThread;
+        encThread=nullptr;
+    }
+    //视频线程对象
+    if(videoWorker){
+        //请求采集线程结束循环
+        videoWorker->stop();
+    }
+    if(videoThread){
+            videoThread->quit();
+            videoThread->wait();
+    }
+    if(videoWorker){
+        delete videoWorker;
+        videoWorker=nullptr;
+    }
+    if(videoThread){
+        delete videoThread;
+        videoThread=nullptr;
+    }
+
+    if(puller&&pullThead){
+        QMetaObject::invokeMethod(puller,"stop",Qt::BlockingQueuedConnection);
+        pullThead->quit();
+        pullThead->wait();
+        pullThead->deleteLater();
+        pullThead=nullptr;
+        puller=nullptr;
+    }
+
+
+    qDebug()<<"[Mainwindow]会议已结束";
 }
 
 void MainWindow::on_switchCameraButton_clicked()
@@ -203,7 +396,8 @@ void MainWindow::on_startAudioButton_clicked()
         QString device = "audio=" + ui->audioDevicecomboBox->currentText();
         qDebug() << "FFmpeg 采集设备名:" << device;
         bool save = ui->enableAudioSavecheckBox->isChecked();
-        bool play = ui->enableAudioPlaycheckBox->isChecked();
+        bool play = false;
+        audioPlayEnabled=false;
 
         // 采集端参数固定 44100 单声道 Int16
         QAudioDevice dev = QMediaDevices::defaultAudioOutput();
@@ -221,84 +415,91 @@ void MainWindow::on_startAudioButton_clicked()
             return;
         }
 
-        audioThread->start();
+        audioThread->start(QThread::HighPriority);
     }
 
+    QPointer<MainWindow> self(this);
     connect(audioWorker, &AudioCapture::audioFrameReady, this,
-            [this](const QByteArray &data){
-                if(recorder&&recorder->isOpen()){
+            [self](const QByteArray &data){
+                if(!self) return;
+                if(self->meetingStopped||self->audioStopped) return;
+
+                if(self->recorder&&self->recorder->isOpen()){
                     //计算样本数
-                    int nb_samples=data.size()/2;
-                    recorder->pushAudioPCM(reinterpret_cast<const uint8_t*>(data.constData()),nb_samples);
+                    int nb_samples=data.size()/2;//S16 mono
+                    self->recorder->pushAudioPCM(reinterpret_cast<const uint8_t*>(data.constData()),nb_samples);
                 }
-                if (!audioSink) {
-                    QAudioDevice dev = QMediaDevices::defaultAudioOutput();
-                    playFormat = dev.preferredFormat();
-                    audioSink = new QAudioSink(dev, playFormat, this);
-                    audioOutput = audioSink->start();
+                if(self->audioPlayEnabled){
+                    if (!self->audioSink) {
+                        QAudioDevice dev = QMediaDevices::defaultAudioOutput();
+                        self->playFormat = dev.preferredFormat();
+                        self->audioSink = new QAudioSink(dev, self->playFormat, self.data());
+                        self->audioOutput = self->audioSink->start();
 
-                    // 初始化 swrCtx (FFmpeg 7.x API)
-                    if (playSwrCtx) {
-                        swr_free(&playSwrCtx);
+                        // 初始化 swrCtx (FFmpeg 7.x API)
+                        if (self->playSwrCtx) {
+                            swr_free(&self->playSwrCtx);
+                        }
+                        AVSampleFormat outFmt = AV_SAMPLE_FMT_S16;
+                        if (self->playFormat.sampleFormat() == QAudioFormat::Int16) outFmt = AV_SAMPLE_FMT_S16;
+                        else if (self->playFormat.sampleFormat() == QAudioFormat::Float) outFmt = AV_SAMPLE_FMT_FLT;
+                        else if (self->playFormat.sampleFormat() == QAudioFormat::UInt8) outFmt = AV_SAMPLE_FMT_U8;
+
+                        AVChannelLayout outLayout, inLayout;
+                        av_channel_layout_default(&outLayout, self->playFormat.channelCount());
+                        av_channel_layout_default(&inLayout, 1); // 采集端单声道
+
+                        self->playSwrCtx = swr_alloc();
+                        swr_alloc_set_opts2(
+                            &self->playSwrCtx,
+                            &outLayout,
+                            outFmt,
+                            self->playFormat.sampleRate(),
+                            &inLayout,
+                            AV_SAMPLE_FMT_S16,
+                            44100,
+                            0, nullptr
+                            );
+                        swr_init(self->playSwrCtx);
+
+                        // 释放临时 layout
+                        av_channel_layout_uninit(&outLayout);
+                        av_channel_layout_uninit(&inLayout);
                     }
-                    AVSampleFormat outFmt = AV_SAMPLE_FMT_S16;
-                    if (playFormat.sampleFormat() == QAudioFormat::Int16) outFmt = AV_SAMPLE_FMT_S16;
-                    else if (playFormat.sampleFormat() == QAudioFormat::Float) outFmt = AV_SAMPLE_FMT_FLT;
-                    else if (playFormat.sampleFormat() == QAudioFormat::UInt8) outFmt = AV_SAMPLE_FMT_U8;
+                    // 只对播放做格式转换，采集和保存流程不受影响
+                    if (self->audioOutput && self->playSwrCtx) {
+                        // 输入参数
+                        const uint8_t* inData[1] = { reinterpret_cast<const uint8_t*>(data.constData()) };
+                        int inSamples = data.size() / 2; // Int16 单声道
 
-                    AVChannelLayout outLayout, inLayout;
-                    av_channel_layout_default(&outLayout, playFormat.channelCount());
-                    av_channel_layout_default(&inLayout, 1); // 采集端单声道
+                        // 计算输出缓冲区大小
+                        int outSamples = av_rescale_rnd(
+                            swr_get_delay(self->playSwrCtx, 44100) + inSamples,
+                            self->playFormat.sampleRate(),
+                            44100,
+                            AV_ROUND_UP
+                            );
+                        int outChannels = self->playFormat.channelCount();
+                        int outBytesPerSample = self->playFormat.sampleFormat() == QAudioFormat::Int16 ? 2 :
+                                                    self->playFormat.sampleFormat() == QAudioFormat::Float ? 4 :
+                                                    self->playFormat.sampleFormat() == QAudioFormat::UInt8 ? 1 : 2;
+                        int outBufSize = outSamples * outChannels * outBytesPerSample;
+                        QByteArray outBuf(outBufSize, 0);
+                        uint8_t* outData[2] = { reinterpret_cast<uint8_t*>(outBuf.data()), nullptr };
 
-                    playSwrCtx = swr_alloc();
-                    swr_alloc_set_opts2(
-                        &playSwrCtx,
-                        &outLayout,
-                        outFmt,
-                        playFormat.sampleRate(),
-                        &inLayout,
-                        AV_SAMPLE_FMT_S16,
-                        44100,
-                        0, nullptr
-                    );
-                    swr_init(playSwrCtx);
-
-                    // 释放临时 layout
-                    av_channel_layout_uninit(&outLayout);
-                    av_channel_layout_uninit(&inLayout);
-                }
-                // 只对播放做格式转换，采集和保存流程不受影响
-                if (audioOutput && playSwrCtx) {
-                    // 输入参数
-                    const uint8_t* inData[1] = { reinterpret_cast<const uint8_t*>(data.constData()) };
-                    int inSamples = data.size() / 2; // Int16 单声道
-
-                    // 计算输出缓冲区大小
-                    int outSamples = av_rescale_rnd(
-                        swr_get_delay(playSwrCtx, 44100) + inSamples,
-                        playFormat.sampleRate(),
-                        44100,
-                        AV_ROUND_UP
-                    );
-                    int outChannels = playFormat.channelCount();
-                    int outBytesPerSample = playFormat.sampleFormat() == QAudioFormat::Int16 ? 2 :
-                                            playFormat.sampleFormat() == QAudioFormat::Float ? 4 :
-                                            playFormat.sampleFormat() == QAudioFormat::UInt8 ? 1 : 2;
-                    int outBufSize = outSamples * outChannels * outBytesPerSample;
-                    QByteArray outBuf(outBufSize, 0);
-                    uint8_t* outData[2] = { reinterpret_cast<uint8_t*>(outBuf.data()), nullptr };
-
-                    // 转换
-                    int converted = swr_convert(
-                        playSwrCtx,
-                        outData, outSamples,
-                        inData, inSamples
-                    );
-                    if (converted > 0) {
-                        int bytesWritten = converted * outChannels * outBytesPerSample;
-                        audioOutput->write(outBuf.constData(), bytesWritten);
+                        // 转换
+                        int converted = swr_convert(
+                            self->playSwrCtx,
+                            outData, outSamples,
+                            inData, inSamples
+                            );
+                        if (converted > 0) {
+                            int bytesWritten = converted * outChannels * outBytesPerSample;
+                            self->audioOutput->write(outBuf.constData(), bytesWritten);
+                        }
                     }
                 }
+
             },
             Qt::QueuedConnection
             );
@@ -312,6 +513,7 @@ void MainWindow::on_stopAudioButton_clicked()
         qDebug()<<"[Mainwindow] 音频采集已停止(重复调用忽略)";
         return;
     }
+    audioStopped=true;
     if (audioWorker) {
         audioWorker->stop();
         if(audioThread){
@@ -337,7 +539,6 @@ void MainWindow::on_stopAudioButton_clicked()
         playSwrCtx = nullptr;
     }
 
-    audioStopped=true;//标记已经清理过
     qDebug()<<"[Mainwindow]音频采集已停止";
 }
 
@@ -584,69 +785,148 @@ void MainWindow::onDebugStopAVRecord()
 
 void MainWindow::on_startReceiveButton_clicked()
 {
-    if(!receiver) receiver=new AVReceiver(this);
-    if(!receiver->start("127.0.0.1",12345,12346)){
-        qWarning()<<"[Mainwindow] 接收端启动失败";
-        return;
-    }
-    qDebug()<<"[Mainwindow] 接收端已启动";
-    //连接远端视频帧->界面上的remoteVideoLabel
-    connect(receiver,&AVReceiver::newVideoFrame,
-            this,[this](const QImage &img){
+    //临时：外部浏览器验证webRTC(不嵌入界面）
+    const bool useExternalWebRTcTest=false;
+    if(puller) return;//防止重复启动
+
+    puller=new rtmppuller(nullptr);
+    pullThead=new QThread(this);
+    puller->moveToThread(pullThead);
+
+    connect(pullThead,&QThread::finished,puller,&QObject::deleteLater);
+    connect(puller,&rtmppuller::videoFrameReady,this,[this](const QImage& img){
         ui->remoteVideolabel->setPixmap(
-            QPixmap::fromImage(img).scaled(
-                ui->remoteVideolabel->size(),
-                Qt::KeepAspectRatio,
-                Qt::SmoothTransformation));
+            QPixmap::fromImage(img).scaled(ui->remoteVideolabel->size(),Qt::KeepAspectRatio,Qt::FastTransformation));
     });
 
-    //简单转发AVReceiver的日志到控制台(可选)
-    connect(receiver,&AVReceiver::logMsg,this,[](const QString &msg){
-        qDebug()<<msg;
+    connect(puller,&rtmppuller::audioFrameReady,this,[this](const QByteArray& pcm,int sampleRate,int channels){
+        if(meetingStopped) return;
+
+        QAudioDevice dev=QMediaDevices::defaultAudioOutput();
+
+        auto rebuildOutput=[this,&dev,sampleRate,channels](){
+            if(recvAudioSink){
+                recvAudioSink->stop();
+                delete recvAudioSink;
+                recvAudioSink=nullptr;
+                recvAudioOutput=nullptr;
+            }
+            if(recvPlaySwrCtx){
+                swr_free(&recvPlaySwrCtx);
+                recvPlaySwrCtx=nullptr;
+            }
+
+            recvInRate=sampleRate;
+            recvInCh=channels;
+
+            QAudioFormat desired;
+            desired.setSampleRate(sampleRate);
+            desired.setChannelCount(channels);
+            desired.setSampleFormat(QAudioFormat::Int16);
+
+            if(dev.isFormatSupported(desired)){
+                recvPlayFormat=desired;
+            }else{
+                recvPlayFormat=dev.preferredFormat();
+            }
+
+            recvAudioSink=new QAudioSink(dev,recvPlayFormat,this);
+            //降低播放缓冲(20ms)
+            recvAudioSink->setBufferSize(recvPlayFormat.bytesForDuration(20000));
+            recvAudioOutput=recvAudioSink->start();
+
+            bool needSwr=!(recvPlayFormat.sampleRate()==sampleRate
+                             &&recvPlayFormat.channelCount()==channels
+                             &&recvPlayFormat.sampleFormat()==QAudioFormat::Int16);
+            if(!needSwr){
+                recvPlaySwrCtx=nullptr;
+                return;
+            }
+
+            AVSampleFormat outFmt=AV_SAMPLE_FMT_S16;
+            if(recvPlayFormat.sampleFormat()==QAudioFormat::Int16)  outFmt=AV_SAMPLE_FMT_S16;
+            else if(recvPlayFormat.sampleFormat()==QAudioFormat::Float)  outFmt=AV_SAMPLE_FMT_FLT;
+            else if(recvPlayFormat.sampleFormat()==QAudioFormat::UInt8)  outFmt=AV_SAMPLE_FMT_U8;
+
+            AVChannelLayout outLayout,inLayout;
+            av_channel_layout_default(&outLayout,recvPlayFormat.channelCount());
+            av_channel_layout_default(&inLayout,channels);
+
+            recvPlaySwrCtx=swr_alloc();
+            swr_alloc_set_opts2(&recvPlaySwrCtx,
+                                &outLayout,outFmt,recvPlayFormat.sampleRate(),
+                                &inLayout,AV_SAMPLE_FMT_S16,sampleRate,
+                                0,nullptr);
+            if(swr_init(recvPlaySwrCtx)<0){
+                qWarning()<<"[RecvAudio] swr_init failed";
+                swr_free(&recvPlaySwrCtx);
+                recvPlaySwrCtx=nullptr;
+            }
+
+            av_channel_layout_uninit(&outLayout);
+            av_channel_layout_uninit(&inLayout);
+        };
+        if(!recvAudioSink||recvInRate!=sampleRate||recvInCh!=channels){
+            rebuildOutput();
+        }
+
+        //缓冲快满时直接丢，避免越听越慢
+        const int minFree=recvPlayFormat.bytesForDuration(10000);//10ms
+        if(recvAudioSink->bytesFree()<minFree){
+            return;
+        }
+
+        if(!recvAudioOutput||!recvAudioSink) return;
+        //非阻塞写：不循环写满，避免主线程卡住后“慢速音”
+        auto writeNoBlocking=[this](const char* data,int len){
+            if(!recvAudioOutput||!recvAudioOutput||len<=0) return;
+            int freeBytes=recvAudioSink->bytesFree();
+            if(freeBytes<=0) return;
+            int n=qMin(len,freeBytes);
+            recvAudioOutput->write(data,n);
+        };
+
+        if(!recvPlaySwrCtx){
+            writeNoBlocking(pcm.constData(),pcm.size());
+            return;
+        }
+
+        const uint8_t* inData[1]{reinterpret_cast<const uint8_t*>(pcm.constData())};
+        int inSamples=pcm.size()/(2*channels);
+
+        int outSamples=av_rescale_rnd(
+            swr_get_delay(recvPlaySwrCtx,sampleRate)+inSamples,
+            recvPlayFormat.sampleRate(),
+            sampleRate,
+            AV_ROUND_UP);
+
+        int outChannels=recvPlayFormat.channelCount();
+        int outBps=(recvPlayFormat.sampleFormat()==QAudioFormat::Int16)?2:
+                         (recvPlayFormat.sampleFormat()==QAudioFormat::Float)?4:1;
+        QByteArray outBuf(outSamples*outChannels*outBps,0);
+        uint8_t* outData[2]={reinterpret_cast<uint8_t*>(outBuf.data()),nullptr};
+
+        int converted=swr_convert(
+            recvPlaySwrCtx,
+            outData,outSamples,
+            inData,inSamples);
+        if(converted>0){
+            int bytes=converted* outChannels*outBps;
+            writeNoBlocking(outBuf.constData(),bytes);
+        }
+    },Qt::QueuedConnection);
+    connect(puller,&rtmppuller::errorOccurred,this,[](const QString& e){
+        qWarning()<<e;
     });
+
+    pullThead->start(QThread::HighPriority);
+
+    const QString url="rtmp://127.0.0.1/live/test";
+    QMetaObject::invokeMethod(puller,"startPull",Qt::QueuedConnection,Q_ARG(QString,url));
+
+    qInfo()<<"[Mainwindow] 接收端已启动(ZLMediakit Pull)";
 }
 
 
-void MainWindow::on_stopMeetingButton_clicked()
-{
-    if(meetingStopped){
-        qDebug()<<"[Mainwindow] 会议已停止重复调用忽略)";
-        return;
-    }
 
-    //1.先停止音频采集（如果正在采集）
-    on_stopAudioButton_clicked();
-    //2.停止视频采集线程
-    if(videoWorker&&videoThread){
-        //请求采集线程结束循环
-        videoWorker->stop();
-        videoThread->quit();
-        videoThread->wait();
-        delete videoWorker;
-        delete videoThread;
-        videoThread=nullptr;
-        videoWorker=nullptr;
-    }
-    //停止接收端(UDP收流+播放)
-    if(receiver){
-        receiver->stop();
-        delete receiver;
-        receiver=nullptr;
-    }
-    //3.停止发送端
-    if(sender){
-        sender->stop();
-        delete sender;
-        sender=nullptr;
-    }
-    //4.停止RTMP推流
-    if(pusher){
-        pusher->stop();
-        delete pusher;
-        pusher=nullptr;
-    }
-
-    meetingStopped=true;
-    qDebug()<<"[Mainwindow]会议已结束";
-}
 

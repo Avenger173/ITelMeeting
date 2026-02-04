@@ -7,6 +7,7 @@
 #include <QFile>
 #include <atomic>
 #include<QAudioSink>
+#include<QElapsedTimer>
 extern "C" {
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
@@ -48,6 +49,7 @@ private:
     bool enablePlay = false;
 
     qint64 totalAudioBytes = 0; // 总共写入的音频字节数
+    static int interruptCallback(void *opaque);
 
 };
 

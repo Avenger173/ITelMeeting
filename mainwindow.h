@@ -15,12 +15,16 @@
 #include<QCheckBox>
 #include<QCloseEvent>
 #include<QElapsedTimer>
+#include<QThread>
 #include"videocapture.h"
 #include"audiocapture.h"
 #include"avrecorder.h"
 #include"avsender.h"
 #include"avreceiver.h"
 #include"rtmppusher.h"
+#include"avnetencoder.h"
+#include"rtmppuller.h"
+#include"avaudioencoder.h"
 extern "C"{
 #include<libavcodec/avcodec.h>
 #include<libavformat/avformat.h>
@@ -103,6 +107,22 @@ private:
     //避免重复stop导致的重复delete
     bool audioStopped=false;
     bool meetingStopped=false;
+    bool audioPlayEnabled=false;
+
+    AvNetEncoder* netEnc=nullptr;
+
+    rtmppuller* puller=nullptr;
+    QThread* pullThead=nullptr;
+    QThread* encThread=nullptr;
+
+    AvAudioEncoder* audioEnc=nullptr;
+
+    int recvInRate=0;
+    int recvInCh=0;
+
+    QThread* audioEncThread=nullptr;
+    QThread* pushThread=nullptr;
+
 
 };
 #endif // MAINWINDOW_H

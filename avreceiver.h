@@ -15,6 +15,7 @@
 #include<functional>
 #include<concurrent_priority_queue.h>
 #include<QHostAddress>
+#include<atomic>
 extern "C"{
 #include<libavcodec/avcodec.h>
 #include<libavformat/avformat.h>
@@ -71,7 +72,10 @@ private:
     //H.264 AnnexB工具函数（从RtmpPusher那边“平移”一份过来）
     static int findStartCode(const uint8_t* p,int end,int &off);
     static void parseH264AnnexBForSpsPps(const uint8_t *data,int size,QByteArray &sps,QByteArray &pps,bool &isKeyFrame);
+    //H.264 AVCC(长度前缀)->AnnexB,并可顺便抓SPS/PPS
+    static bool avccToAnnexBAndExtract(const uint8_t *data,int size,QByteArray &annexb,QByteArray &sps,QByteArray &pps,bool &isKeyFrame);
 
+    std::atomic_bool m_stopping{false};
 };
 
 #endif // AVRECEIVER_H
