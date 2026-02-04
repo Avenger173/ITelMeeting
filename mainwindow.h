@@ -97,10 +97,6 @@ private:
     AVSender *sender=nullptr;
     //接收
     AVReceiver *receiver=nullptr;
-    QAudioSink *recvAudioSink=nullptr;
-    QIODevice *recvAudioOutput=nullptr;
-    SwrContext *recvPlaySwrCtx=nullptr;
-    QAudioFormat recvPlayFormat;
 
     RtmpPusher* pusher=nullptr;
 
@@ -117,8 +113,6 @@ private:
 
     AvAudioEncoder* audioEnc=nullptr;
 
-    int recvInRate=0;
-    int recvInCh=0;
 
     QThread* audioEncThread=nullptr;
     QThread* pushThread=nullptr;

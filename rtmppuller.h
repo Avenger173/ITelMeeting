@@ -30,7 +30,6 @@ signals:
     void videoFrameReady(const QImage& img);
     void errorOccurred(const QString& err);
     void finished();
-    void audioFrameReady(const QByteArray& pcm,int sampleRate,int channels);
 private:
     QAtomicInteger<bool> stopFlag{false};
 

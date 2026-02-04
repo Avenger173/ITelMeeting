@@ -37,7 +37,7 @@ bool AvAudioEncoder::open(int sampleRate, int channels)
         pick=codec_->sample_fmts[0];
         const AVSampleFormat* p=codec_->sample_fmts;
         while(*p!=AV_SAMPLE_FMT_NONE){
-            if(*p!=AV_SAMPLE_FMT_FLTP){
+            if(*p==AV_SAMPLE_FMT_FLTP){
                 pick=AV_SAMPLE_FMT_FLTP;
                 break;
             }
@@ -129,9 +129,9 @@ void AvAudioEncoder::pushPcm(const QByteArray &pcm)
             frame_->format=ctx_->sample_fmt;
             frame_->ch_layout=ctx_->ch_layout;
             frame_->sample_rate=ctx_->sample_rate;
-            av_frame_get_buffer(frame_,0);
+            if(av_frame_get_buffer(frame_,0)<0) return;
         }
-        av_frame_get_buffer(frame_,0);
+        if(av_frame_make_writable(frame_)<0) return;
 
         const uint8_t *inData[1]={reinterpret_cast<const uint8_t*>(pcmBuf_.data())};
         int ret=swr_convert(swr_,frame_->data,frameSize,inData,frameSize);
