@@ -16,7 +16,6 @@ RtmpPusher::RtmpPusher(QObject *parent)
 RtmpPusher::~RtmpPusher()
 {
     stop();
-    avformat_network_deinit();
 }
 
 bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)

@@ -18,8 +18,8 @@ link_directories(
   "D:/Opencv/opencv-4.8.0-windows/opencv/build/x64/vc16/lib"
   "D:/lib/mrwebrtc/mrwebrtc.2.0.2/runtimes/win10-x64/native/debug"
 )
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network Sql Multimedia)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network Sql Multimedia)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network Sql Multimedia WebSockets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network Sql Multimedia WebSockets)
 
 #===MixedReality-WebRTC(NuGet)集成开始===
 #指定NuGet包的根目录
@@ -92,6 +92,7 @@ target_link_libraries(SmartMeet
   Qt${QT_VERSION_MAJOR}::Network
   Qt${QT_VERSION_MAJOR}::Sql
   Qt${QT_VERSION_MAJOR}::Multimedia
+  Qt${QT_VERSION_MAJOR}::WebSockets
   "D:/lib/ffmpeg-7.1.1-full_build-shared/lib/avformat.lib"
   "D:/lib/ffmpeg-7.1.1-full_build-shared/lib/avcodec.lib"
   "D:/lib/ffmpeg-7.1.1-full_build-shared/lib/avutil.lib"

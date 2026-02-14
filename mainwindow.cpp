@@ -1,63 +1,63 @@
 ﻿#include "mainwindow.h"
 #include "./ui_mainwindow.h"
-#include<QImage>
-#include<QPixmap>
-#include<QDateTime>
-#include<QMessageBox>
-#include<QDebug>
-#include<QThread>
-#include<thread>
-#include<QProcess>
-#include<QDataStream>
-#include<QAudioFormat>
-#include<QPainter>
-#include<QApplication>
-#include<QPointer>
-#include<libswresample/swresample.h>
-#include<QDesktopServices>
-#include<QUrl>
+#include <QImage>
+#include <QPixmap>
+#include <QDateTime>
+#include <QMessageBox>
+#include <QDebug>
+#include <QThread>
+#include <QAudioFormat>
+#include <QPainter>
+#include <QApplication>
+#include <QPointer>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QRandomGenerator>
+#include <QInputDialog>
+#include <QMenu>
+#include <QMenuBar>
+#include <QVBoxLayout>
+#include <QGridLayout>
+#include <QLineEdit>
+#include <QUrl>
+#include <QMouseEvent>
+#include <algorithm>
+#include <libswresample/swresample.h>
+
+namespace {
+static bool stopThreadAndDelete(QThread *&thr, const char *tag, int quitWaitMs = 3000) {
+    if (!thr) return true;
+    thr->quit();
+    if (!thr->wait(quitWaitMs)) {
+        qWarning() << "[Mainwindow]" << tag << "stop timeout, detach";
+        thr->requestInterruption();
+        thr->setParent(nullptr);
+        QObject::connect(thr, &QThread::finished, thr, &QObject::deleteLater, Qt::UniqueConnection);
+        thr = nullptr;
+        return false;
+    }
+    delete thr;
+    thr = nullptr;
+    return true;
+}
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    ,timer(new QTimer(this))
+    , timer(new QTimer(this))
 {
     ui->setupUi(this);
-    // 临时测试菜单
-    QMenu *debugMenu=menuBar()->addMenu(QStringLiteral("调试(临时)"));
-    QAction *actStartEmpty=new QAction(QStringLiteral("开始空录制(仅写头)"),this);
-    QAction *actStopEmpty=new QAction(QStringLiteral("结束空录制(写尾)"),this);
-    debugMenu->addAction(actStartEmpty);
-    debugMenu->addAction(actStopEmpty);
-    connect(actStartEmpty,&QAction::triggered,this,&MainWindow::onDebugStartEmptyRecord);
-    connect(actStopEmpty,&QAction::triggered,this,&MainWindow::onDebugStopEmptyRecord);
-    QAction *actGenTest=new QAction(QStringLiteral("生成3秒测试视频"),this);
-    debugMenu->addAction(actGenTest);
-    connect(actGenTest,&QAction::triggered,this,&MainWindow::onDebugGen3sTestVideo);
-    QAction *actStartCamRec=new QAction(QStringLiteral("开始摄像头录制(仅视频)"),this);
-    QAction *actStopCamRec=new QAction(QStringLiteral("停止摄像头录制"),this);
-    debugMenu->addAction(actStartCamRec);
-    debugMenu->addAction(actStopCamRec);
-    connect(actStartCamRec,&QAction::triggered,this,&MainWindow::onDebugStartCamRecord);
-    connect(actStopCamRec,&QAction::triggered,this,&MainWindow::onDebugStopCamRecord);
-    QAction *actStartEmptyAV=new QAction(QStringLiteral("开始空AV录制(仅写头)"),this);
-    debugMenu->addAction(actStartEmptyAV);
-    connect(actStartEmptyAV,&QAction::triggered,this,&MainWindow::onDebugStartEmptyAV);
-    QAction *actStartAudioRec=new QAction(QStringLiteral("开始音频录制(仅音频)"),this);
-    QAction *actStopAudioRec=new QAction(QStringLiteral("停止音频录制"),this);
-    debugMenu->addAction(actStartAudioRec);
-    debugMenu->addAction(actStopAudioRec);
-    connect(actStartAudioRec,&QAction::triggered,this,&MainWindow::onDebugStartAudioRecord);
-    connect(actStopAudioRec,&QAction::triggered,this,&MainWindow::onDebugStopAudioRecord);
-
-    QAction *actStartAVRec=new QAction(QStringLiteral("开始AV录制(音视频)"),this);
-    QAction *actStopAVRec=new QAction(QStringLiteral("停止AV录制"),this);
-    debugMenu->addAction(actStartAVRec);
-    debugMenu->addAction(actStopAVRec);
-    connect(actStartAVRec,&QAction::triggered,this,&MainWindow::onDebugStartAVRecord);
-    connect(actStopAVRec,&QAction::triggered,this,&MainWindow::onDebugStopAVRecord);
+    qInfo() << "[Build] SmartMeet" << __DATE__ << __TIME__;
 
     setWindowTitle("SmartMeet视频会议系统");
+    if (ui->startMeetingButton) ui->startMeetingButton->setText("开始会议");
+    if (ui->stopMeetingButton) ui->stopMeetingButton->setText("结束会议");
+    if (ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
+    if (ui->startRecordButton) ui->startRecordButton->setText("开始AV录制");
+    if (ui->stopRecordButton) ui->stopRecordButton->setText("停止AV录制");
+
     for (int i = 0; i < 5; ++i) {
         cv::VideoCapture temp(i);
         if (temp.isOpened()) {
@@ -65,292 +65,329 @@ MainWindow::MainWindow(QWidget *parent)
             temp.release();
         }
     }
-    // 构造函数中加入音频输入设备（使用 Qt 媒体设备描述）
     for (const auto &device : QMediaDevices::audioInputs()) {
         ui->audioDevicecomboBox->addItem(device.description());
     }
-    // 确保 recorder 存在后再连接信号
-        recorder=new AvRecorder(this);
-    connect(recorder,&AvRecorder::videoPacketReady,this,[](const QByteArray &pkt,quint32 pts){
-        qDebug()<<"[Recorder] 视频包"<<pkt.size()<<"pts"<<pts;
+
+    recorder = new AvRecorder(this);
+    connect(recorder, &AvRecorder::videoPacketReady, this, [](const QByteArray &pkt, quint32 pts){
+        qDebug() << "[Recorder] 视频包" << pkt.size() << "pts" << pts;
     });
-    connect(recorder,&AvRecorder::audioPacketReady,this,[](const QByteArray &pkt,quint32 pts){
-        qDebug()<<"[Recorder] 音频包"<<pkt.size()<<"pts"<<pts;
+    connect(recorder, &AvRecorder::audioPacketReady, this, [](const QByteArray &pkt, quint32 pts){
+        qDebug() << "[Recorder] 音频包" << pkt.size() << "pts" << pts;
     });
+
+    setupSignalUi();
+    setupRemoteGridUi();
+    refreshRemoteTiles();
 }
 
 MainWindow::~MainWindow()
 {
     qDebug()<<"[MainWindow] 析构";
-    on_stopMeetingButton_clicked();
 
+    on_stopMeetingButton_clicked();
+    if(signalSocket){
+        delete signalSocket;
+        signalSocket=nullptr;
+    }
 
     if (playSwrCtx) {
         swr_free(&playSwrCtx);
         playSwrCtx = nullptr;
     }
-    if (videoWorker&&videoThread) {
-        videoWorker->stop();
-        videoThread->quit();
-        videoThread->wait();
-        delete videoWorker;
-        delete videoThread;
-        videoWorker = nullptr;
-        videoThread=nullptr;
-    }
-
-
-
     auto tmp=ui;
     ui=nullptr;
     delete tmp;
 }
 
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    on_stopMeetingButton_clicked();
+    QMainWindow::closeEvent(event);
+}
+
 void MainWindow::on_startMeetingButton_clicked()
 {
-    meetingStopped=false;
-    audioStopped=false;
-    const bool useExternalWebRtcTest=false;
-    if(videoWorker||videoThread){
-        qInfo()<<"[Mainwindow] 会议已启动（重复启动忽略）";
+    meetingStopped = false;
+    audioStopped = false;
+    localAudioOn = true;
+    localVideoOn = true;
+
+    if (videoWorker || videoThread) {
+        qInfo() << "[Mainwindow] 会议已启动（重复启动忽略）";
         return;
     }
+
+    if (!ensureRoomIdentity(false)) {
+        qWarning() << "[Room] 房间身份初始化失败";
+        return;
+    }
+    appendRoomEvent(QString("房间: %1 用户流: %2").arg(roomId, selfStream));
+
     if (!videoWorker) {
         videoWorker = new VideoCapture;
         videoThread = new QThread(this);
+        videoThread->setObjectName("videoThread");
         videoWorker->moveToThread(videoThread);
 
         connect(videoThread, &QThread::started, videoWorker, &VideoCapture::captureLoop);
+        connect(videoThread, &QThread::finished, videoWorker, &QObject::deleteLater, Qt::UniqueConnection);
 
-        QPointer<QLabel> localLabel=ui->localVideolabel;
+        QPointer<QLabel> localLabel = ui->localVideolabel;
         QPointer<MainWindow> self(this);
-        disconnect(videoWorker,&VideoCapture::frameCaptured,this,nullptr);
+        disconnect(videoWorker, &VideoCapture::frameCaptured, this, nullptr);
         connect(videoWorker, &VideoCapture::frameCaptured, this, [self,localLabel](const QImage &img){
             if(!self) return;
             if(self->meetingStopped) return;
             if(!localLabel) return;
-            // 预览到本地label
             localLabel->setPixmap(QPixmap::fromImage(img).scaled(
                 localLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
-
-            // if(camRecording&&recorder&&recorder->isOpen()){
-            //     // 简单节流
-            //     const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
-            //     const qint64 interval=1000/qMax(1,recFps);
-            //     if(nowMs-lastPushMs>=interval){
-            //         recorder->pushVideoFrame(img);
-            //         lastPushMs=nowMs;
-            //     }
-            // }
-        },Qt::QueuedConnection);
+            if (self->camRecording && self->recorder && self->recorder->isOpen()) {
+                self->recorder->pushVideoFrame(img);
+            }
+        }, Qt::QueuedConnection);
 
         if (!videoWorker->open(0)) {
             QMessageBox::warning(this, "错误", "无法打开摄像头");
-            // 清理:避免留下半初始化对象导致 stopMeeting 崩溃
             videoWorker->deleteLater();
-            videoWorker=nullptr;
+            videoWorker = nullptr;
             videoThread->deleteLater();
-            videoThread=nullptr;
+            videoThread = nullptr;
             return;
         }
 
         videoThread->start(QThread::HighPriority);
     }
-    // RTMP联调阶段先关闭UDP发送，避免额外线程/日志压力
-    constexpr bool kEnableUdpSender=false;
-    if(kEnableUdpSender){
-        if(!sender) sender=new AVSender(this);
-        if(sender->start("127.0.0.1",12345,12346)){
-            qDebug()<<"[Mainwindow] 发送端已启动";
-        }else{
-            qWarning()<<"[Mainwindow] AVSender 已在运行";
-        }
-    }
 
-    // 启动RTMP推流到ZLMediaKit
-    // 创建编码/推流线程
-    if(!encThread){
-        encThread=new QThread(this);
+    if (!encThread) {
+        encThread = new QThread(this);
+        encThread->setObjectName("encThread");
         encThread->start(QThread::HighPriority);
     }
-    // RTMP推流器放到pushThread
-    if(!pushThread){
-        pushThread=new QThread(this);
+    if (!pushThread) {
+        pushThread = new QThread(this);
+        pushThread->setObjectName("pushThread");
         pushThread->start(QThread::HighPriority);
     }
-    if(!pusher) pusher=new RtmpPusher(nullptr);
-    pusher->moveToThread(pushThread);
-    connect(pushThread,&QThread::finished,pusher,&QObject::deleteLater);
-
-    // 先启动音频
-    //Audio RTMP
-    if(!audioWorker){
-        on_startAudioButton_clicked();// 复用已有音频采集
+    if (!audioEncThread) {
+        audioEncThread = new QThread(this);
+        audioEncThread->setObjectName("audioEncThread");
+        audioEncThread->start(QThread::HighPriority);
     }
 
-    if(audioWorker){
-        if(!audioEncThread){
-            audioEncThread=new QThread(this);
-            audioEncThread->start(QThread::HighPriority);
-        }
-        audioEnc=new AvAudioEncoder(nullptr);
+    if (!pusher) {
+        pusher = new RtmpPusher(nullptr);
+        pusher->moveToThread(pushThread);
+        connect(pushThread, &QThread::finished, pusher, &QObject::deleteLater, Qt::UniqueConnection);
+    }
+
+    if (!netEnc) {
+        netEnc = new AvNetEncoder(nullptr);
+        netEnc->moveToThread(encThread);
+        connect(encThread, &QThread::finished, netEnc, &QObject::deleteLater, Qt::UniqueConnection);
+    }
+    if (!audioEnc) {
+        audioEnc = new AvAudioEncoder(nullptr);
         audioEnc->moveToThread(audioEncThread);
-        connect(audioEncThread,&QThread::finished,audioEnc,&QObject::deleteLater);
-
-        bool aok=false;
-        QMetaObject::invokeMethod(audioEnc,[&](){
-            aok=audioEnc->open(44100,1);
-        },Qt::BlockingQueuedConnection);
-
-        if(!aok){
-            qWarning()<<"[Mainwindow] 音频编码器打开失败";
-        }
-
-        disconnect(audioWorker,&AudioCapture::audioFrameReady,audioEnc,nullptr);
-        connect(audioWorker,&AudioCapture::audioFrameReady,audioEnc,&AvAudioEncoder::pushPcm,Qt::QueuedConnection);
-
-        disconnect(audioEnc,&AvAudioEncoder::audioPacketReady,pusher,nullptr);
-        connect(audioEnc,&AvAudioEncoder::audioPacketReady,pusher,&RtmpPusher::pushEncodeAudio,Qt::QueuedConnection);
+        connect(audioEncThread, &QThread::finished, audioEnc, &QObject::deleteLater, Qt::UniqueConnection);
     }
 
-    bool rtmpOk=false;
-    QMetaObject::invokeMethod(pusher,[&](){
-        pusher->setVideoParams(640,480,30);
-        pusher->setAudioParams(44100,1);
-        rtmpOk = pusher->start("rtmp://127.0.0.1/live/test",30,44100);
-    },Qt::BlockingQueuedConnection);
-
-    if(!rtmpOk){
-        qWarning()<<"[Mainwindow] RTMP推流启动失败";
-    }else{
-        qDebug()<<"[Mainwindow] RTMP推流已启动";
+    if (!audioWorker) {
+        on_startAudioButton_clicked();
     }
 
-    // 编码器放到视频线程
-    if(!netEnc) netEnc=new AvNetEncoder(nullptr);
-    netEnc->moveToThread(encThread);
-    connect(encThread,&QThread::finished,netEnc,&QObject::deleteLater);
+    bool aok = false;
+    QMetaObject::invokeMethod(audioEnc, [&]() {
+        aok = audioEnc->open(44100, 1);
+    }, Qt::BlockingQueuedConnection);
+    if (!aok) {
+        qWarning() << "[Mainwindow] 音频编码器打开失败";
+    }
 
-    // 先连接输出信号，避免配置包丢失
-    // connect(netEnc,&AvNetEncoder::videoPacketReady,sender,&AVSender::sendEncodedVideo,Qt::QueuedConnection);
-    connect(netEnc,&AvNetEncoder::videoPacketReady,pusher,&RtmpPusher::pushEncodeVideo,Qt::QueuedConnection);
-
-    bool encOk=false;
-    QMetaObject::invokeMethod(netEnc,[&](){
-        encOk = netEnc->openVideo(640,480,30);
-    },Qt::BlockingQueuedConnection);
-
-    if(!encOk){
-        qWarning()<<"[Mainwindow] netEnc openVideo 失败";
+    bool encOk = false;
+    QMetaObject::invokeMethod(netEnc, [&]() {
+        encOk = netEnc->openVideo(640, 480, 30);
+    }, Qt::BlockingQueuedConnection);
+    if (!encOk) {
+        qWarning() << "[Mainwindow] netEnc openVideo 失败";
         return;
     }
 
-    // netEnc 在 encThread，必须 QueuedConnection
-    connect(videoWorker,&VideoCapture::frameCaptured,netEnc,&AvNetEncoder::pushVideoFrame,Qt::QueuedConnection);
+    disconnect(netEnc, &AvNetEncoder::videoPacketReady, pusher, nullptr);
+    connect(netEnc, &AvNetEncoder::videoPacketReady, pusher, &RtmpPusher::pushEncodeVideo, Qt::QueuedConnection);
+    disconnect(audioEnc, &AvAudioEncoder::audioPacketReady, pusher, nullptr);
+    connect(audioEnc, &AvAudioEncoder::audioPacketReady, pusher, &RtmpPusher::pushEncodeAudio, Qt::QueuedConnection);
 
+    if (videoSendConn) disconnect(videoSendConn);
+    videoSendConn = connect(videoWorker, &VideoCapture::frameCaptured, this, [this](const QImage &img) {
+        if (!netEnc) return;
+        QImage out = img;
+        if (!localVideoOn) {
+            static QImage blackFrame;
+            if (blackFrame.size() != img.size() || blackFrame.format() != QImage::Format_RGB888) {
+                blackFrame = QImage(img.size(), QImage::Format_RGB888);
+                blackFrame.fill(Qt::black);
+            }
+            out = blackFrame;
+        }
+        QMetaObject::invokeMethod(netEnc, "pushVideoFrame", Qt::QueuedConnection, Q_ARG(QImage, out));
+    }, Qt::QueuedConnection);
 
-    // // 连接录像模块 -> 推流模块
-    // connect(recorder,&AvRecorder::videoPacketReady,sender,&AVSender::sendEncodedVideo,Qt::QueuedConnection);
-    // connect(recorder,&AvRecorder::audioPacketReady,sender,&AVSender::sendEncodedAudio,Qt::QueuedConnection);
+    if (audioWorker) {
+        if (audioSendConn) disconnect(audioSendConn);
+        audioSendConn = connect(audioWorker, &AudioCapture::audioFrameReady, this, [this](const QByteArray &pcm) {
+            if (!audioEnc) return;
+            QByteArray toSend = pcm;
+            if (!localAudioOn) {
+                toSend.fill('\0');
+            }
+            QMetaObject::invokeMethod(audioEnc, "pushPcm", Qt::QueuedConnection, Q_ARG(QByteArray, toSend));
+        }, Qt::QueuedConnection);
+    }
 
-    // // 连接编码后数据 -> 推流器
-    // connect(recorder,&AvRecorder::videoPacketReady,pusher,&RtmpPusher::pushEncodeVideo,Qt::QueuedConnection);
-    // connect(recorder,&AvRecorder::audioPacketReady,pusher,&RtmpPusher::pushEncodeAudio,Qt::QueuedConnection);
+    const QString pushUrl = QString("rtmp://127.0.0.1/live/%1").arg(selfStream);
+    bool rtmpOk = false;
+    QMetaObject::invokeMethod(pusher, [&]() {
+        pusher->setVideoParams(640, 480, 30);
+        pusher->setAudioParams(44100, 1);
+        rtmpOk = pusher->start(pushUrl, 30, 44100);
+    },Qt::BlockingQueuedConnection);
+
+    if (!rtmpOk) {
+        qWarning() << "[Mainwindow] RTMP推流启动失败";
+        isPublishing = false;
+    } else {
+        qDebug() << "[Mainwindow] RTMP推流已启动";
+        isPublishing = true;
+    }
+
+    appendRoomEvent(QString("开始会议，推流: %1").arg(pushUrl));
+    if (signalConnected) {
+        sendSignalUpdate();
+    }
 }
 
 void MainWindow::on_stopMeetingButton_clicked()
 {
-    if(meetingStopped){
-        qDebug()<<"[Mainwindow] 会议已停止（重复调用忽略）";
+    if (stopMeetingInProgress) {
+        qDebug() << "[Mainwindow] 会议停止流程执行中（重复调用忽略）";
+        return;
     }
-    meetingStopped=true;
+    stopMeetingInProgress = true;
 
-    // 断开所有外部对象
-    if(receiver) disconnect(receiver,nullptr,this,nullptr);
-    // 1) 先停止音频采集（若正在采集）
+    if (meetingStopped) {
+        qDebug() << "[Mainwindow] 会议已停止（重复调用忽略）";
+        stopMeetingInProgress = false;
+        return;
+    }
+    meetingStopped = true;
+    isPublishing = false;
+    qInfo() << "[Mainwindow] stop meeting begin";
+
+    if (signalConnected) {
+        sendSignalUpdate();
+    }
+
+    stopCurrentPull();
+    qInfo() << "[Mainwindow] stop pull done";
+
+    if (videoSendConn) disconnect(videoSendConn);
+    if (audioSendConn) disconnect(audioSendConn);
+    if (netEnc && pusher) disconnect(netEnc, &AvNetEncoder::videoPacketReady, pusher, nullptr);
+    if (audioEnc && pusher) disconnect(audioEnc, &AvAudioEncoder::audioPacketReady, pusher, nullptr);
+
+    if (receiver) disconnect(receiver, nullptr, this, nullptr);
+
     on_stopAudioButton_clicked();
-    // 停止接收端(UDP收流+播放)
-    if(receiver){
-        disconnect(receiver,nullptr,this,nullptr);;// 先断开，防止继续触发UI更新
+    qInfo() << "[Mainwindow] stop audio done";
+
+    if (receiver) {
+        disconnect(receiver, nullptr, this, nullptr);
         receiver->stop();
         delete receiver;
-        receiver=nullptr;
+        receiver = nullptr;
     }
-    // 3) 停止发送端
-    if(sender){
+
+    if (sender) {
         sender->stop();
         delete sender;
-        sender=nullptr;
-    }
-    // 停止RTMP推流
-    if(pusher){
-        QMetaObject::invokeMethod(pusher,[&](){
-            pusher->stop();
-        },Qt::BlockingQueuedConnection);
-        pusher->deleteLater();
-        pusher=nullptr;
-    }
-    if(pushThread){
-        pushThread->quit();
-        pushThread->wait();
-        delete pushThread;
-        pushThread=nullptr;
-    }
-    if(audioEnc){
-        QMetaObject::invokeMethod(audioEnc,[&](){
-            audioEnc->close();
-        },Qt::BlockingQueuedConnection);
-        audioEnc=nullptr;
-    }
-    if(audioEncThread){
-        audioEncThread->quit();
-        audioEncThread->wait();
-        delete audioEncThread;
-        audioEncThread=nullptr;
-    }
-    // 编码器
-    if(netEnc){
-        QMetaObject::invokeMethod(netEnc,[&](){
-            netEnc->close();
-        },Qt::BlockingQueuedConnection);
-        netEnc=nullptr;
+        sender = nullptr;
     }
 
-    if(encThread){
-        encThread->quit();
-        encThread->wait();
-        delete encThread;
-        encThread=nullptr;
+    if (pusher) {
+        if (pushThread && pushThread->isRunning()) {
+            QMetaObject::invokeMethod(pusher, [&]() {
+                pusher->stop();
+            }, Qt::BlockingQueuedConnection);
+        } else {
+            pusher->stop();
+        }
     }
-    // 视频线程对象
-    if(videoWorker){
-        // 请求采集线程结束循环
+
+    stopThreadAndDelete(pushThread, "pushThread", 3000);
+    qInfo() << "[Mainwindow] stop pushThread done";
+    pusher = nullptr;
+
+    if (audioEnc) {
+        if (audioEncThread && audioEncThread->isRunning()) {
+            QMetaObject::invokeMethod(audioEnc, [&]() {
+                audioEnc->close();
+            }, Qt::BlockingQueuedConnection);
+        } else {
+            audioEnc->close();
+        }
+    }
+    stopThreadAndDelete(audioEncThread, "audioEncThread", 3000);
+    qInfo() << "[Mainwindow] stop audioEncThread done";
+    audioEnc = nullptr;
+
+    if (netEnc) {
+        if (encThread && encThread->isRunning()) {
+            QMetaObject::invokeMethod(netEnc, [&]() {
+                netEnc->close();
+            }, Qt::BlockingQueuedConnection);
+        } else {
+            netEnc->close();
+        }
+    }
+    stopThreadAndDelete(encThread, "encThread", 3000);
+    qInfo() << "[Mainwindow] stop encThread done";
+    netEnc = nullptr;
+
+    if (videoWorker) {
         videoWorker->stop();
     }
-    if(videoThread){
-            videoThread->quit();
-            videoThread->wait();
+    stopThreadAndDelete(videoThread, "videoThread", 3000);
+    qInfo() << "[Mainwindow] stop videoThread done";
+    videoWorker = nullptr;
+
+    if (signalSocket) {
+        disconnect(signalSocket, nullptr, this, nullptr);
+        sendSignalLeave();
+        signalSocket->close();
+        appendRoomEvent("已断开信令");
     }
-    if(videoWorker){
-        delete videoWorker;
-        videoWorker=nullptr;
+    signalConnected = false;
+    if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
+    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
+    memberStates.clear();
+    roomHostStream.clear();
+    preferredRemoteStream.clear();
+    currentRemoteStream.clear();
+    focusedStream.clear();
+    focusMode = false;
+    refreshRoomUserList();
+    clearAllTileFrames();
+    if (remoteStack && remoteGridPage) {
+        remoteStack->setCurrentWidget(remoteGridPage);
     }
-    if(videoThread){
-        delete videoThread;
-        videoThread=nullptr;
+    if (ui && ui->remoteVideolabel) {
+        ui->remoteVideolabel->clear();
     }
 
-    if(puller&&pullThead){
-        QMetaObject::invokeMethod(puller,"stop",Qt::BlockingQueuedConnection);
-        pullThead->quit();
-        pullThead->wait();
-        pullThead->deleteLater();
-        pullThead=nullptr;
-        puller=nullptr;
-    }
-
-
-    qDebug()<<"[Mainwindow] 会议已结束";
+    qDebug() << "[Mainwindow] 会议已结束";
+    stopMeetingInProgress = false;
 }
 
 void MainWindow::on_switchCameraButton_clicked()
@@ -379,7 +416,9 @@ void MainWindow::on_startAudioButton_clicked()
     if (!audioWorker) {
         audioWorker = new AudioCapture;
         audioThread = new QThread(this);
+        audioThread->setObjectName("audioThread");
         audioWorker->moveToThread(audioThread);
+        connect(audioThread, &QThread::finished, audioWorker, &QObject::deleteLater, Qt::UniqueConnection);
 
         connect(audioThread, &QThread::started, audioWorker, &AudioCapture::captureLoop);
         connect(audioWorker, &AudioCapture::logMessage, this, [](const QString &msg){
@@ -389,8 +428,8 @@ void MainWindow::on_startAudioButton_clicked()
         QString device = "audio=" + ui->audioDevicecomboBox->currentText();
         qDebug() << "FFmpeg 采集设备名:" << device;
         bool save = ui->enableAudioSavecheckBox->isChecked();
-        bool play = false;
-        audioPlayEnabled=false;
+        bool play = ui->enableAudioPlaycheckBox->isChecked();
+        audioPlayEnabled = play;
 
         // 采集端参数固定: 44100 Hz / 单声道 / Int16
         QAudioDevice dev = QMediaDevices::defaultAudioOutput();
@@ -411,8 +450,9 @@ void MainWindow::on_startAudioButton_clicked()
         audioThread->start(QThread::HighPriority);
     }
 
+    if (recordConn) disconnect(recordConn);
     QPointer<MainWindow> self(this);
-    connect(audioWorker, &AudioCapture::audioFrameReady, this,
+    recordConn = connect(audioWorker, &AudioCapture::audioFrameReady, this,
             [self](const QByteArray &data){
                 if(!self) return;
                 if(self->meetingStopped||self->audioStopped) return;
@@ -509,18 +549,13 @@ void MainWindow::on_stopAudioButton_clicked()
     audioStopped=true;
     if (audioWorker) {
         audioWorker->stop();
-        if(audioThread){
-            audioThread->quit();
-            audioThread->wait();
-        }
         disconnect(audioWorker, nullptr, this, nullptr); // 断开所有信号
-        delete audioWorker;
-        audioWorker = nullptr;
+        recordConn = QMetaObject::Connection();
+        audioSendConn = QMetaObject::Connection();
     }
-    if(audioThread){
-        delete audioThread;
-        audioThread=nullptr;
-    }
+    stopThreadAndDelete(audioThread, "audioThread", 5000);
+    audioWorker = nullptr;
+
     if (audioSink) {
         audioSink->stop();
         delete audioSink;
@@ -539,12 +574,12 @@ void MainWindow::on_stopAudioButton_clicked()
 
 void MainWindow::on_startRecordButton_clicked()
 {
-
+    onDebugStartAVRecord();
 }
 
 void MainWindow::on_stopRecordButton_clicked()
 {
-
+    onDebugStopAVRecord();
 }
 
 void MainWindow::onDebugStartEmptyRecord()
@@ -556,9 +591,9 @@ void MainWindow::onDebugStartEmptyRecord()
     if(!recorder) recorder=new AvRecorder(this);
 
     const QString filename="test_empty.mp4";
-    const int w=640,h=480,fps=30;
+    const int width = 640, height = 480, fps = 30;
 
-    if(!recorder->open(filename,w,h,fps)){
+    if(!recorder->open(filename, width, height, fps)){
         QMessageBox::warning(this,"错误","打开录制器失败，请查看控制台日志。");
         return;
     }
@@ -621,7 +656,7 @@ void MainWindow::onDebugGen3sTestVideo()
             // 画网格
             p.setPen(QColor(255, 255, 255, 80));
             for (int x = 0; x < W; x += 80) p.drawLine(x, 0, x, H);
-            for (int y = 0; y < H; y += 60) p.drawLine(0, y, W, y);\
+            for (int y = 0; y < H; y += 60) p.drawLine(0, y, W, y);
 
             // 写时间戳与帧号
             p.setPen(Qt::yellow);
@@ -778,33 +813,748 @@ void MainWindow::onDebugStopAVRecord()
 
 void MainWindow::on_startReceiveButton_clicked()
 {
-    // 临时: 外部浏览器验证WebRTC(不嵌入界面)
-    const bool useExternalWebRTcTest=false;
-    if(puller) return;// 防止重复启动
+    if (signalConnected) {
+        appendRoomEvent("手动断开信令");
+        if (signalSocket) {
+            sendSignalLeave();
+            signalSocket->close();
+        }
+        return;
+    }
+    if (!ensureRoomIdentity(true)) {
+        return;
+    }
+    if (!signalSocket) {
+        signalSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
+        connect(signalSocket, &QWebSocket::connected, this, &MainWindow::onSignalConnected);
+        connect(signalSocket, &QWebSocket::disconnected, this, &MainWindow::onSignalDisconnected);
+        connect(signalSocket, &QWebSocket::textMessageReceived, this, &MainWindow::onSignalTextMessage);
+        connect(signalSocket, &QWebSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
+            appendRoomEvent(QString("信令错误: %1").arg(signalSocket->errorString()));
+        });
+    }
 
-    puller=new rtmppuller(nullptr);
-    pullThead=new QThread(this);
-    puller->moveToThread(pullThead);
+    if (signalSocket->state() == QAbstractSocket::ConnectedState
+        || signalSocket->state() == QAbstractSocket::ConnectingState) {
+        appendRoomEvent("信令连接进行中");
+        return;
+    }
 
-    connect(pullThead,&QThread::finished,puller,&QObject::deleteLater);
-    connect(puller,&rtmppuller::videoFrameReady,this,[this](const QImage& img){
-        ui->remoteVideolabel->setPixmap(
-            QPixmap::fromImage(img).scaled(ui->remoteVideolabel->size(),Qt::KeepAspectRatio,Qt::FastTransformation));
-    });
-
-    // 音频播放已在 rtmppuller 线程内部处理
-    connect(puller,&rtmppuller::errorOccurred,this,[](const QString& e){
-        qWarning()<<e;
-    });
-
-    pullThead->start(QThread::HighPriority);
-
-    const QString url="rtmp://127.0.0.1/live/test";
-    QMetaObject::invokeMethod(puller,"startPull",Qt::QueuedConnection,Q_ARG(QString,url));
-
-    qInfo()<<"[Mainwindow] 接收端已启动(ZLMediakit Pull)";
+    if (signalStateLabel) signalStateLabel->setText("信令: 连接中");
+    appendRoomEvent(QString("连接信令服务器: %1").arg(signalUrl));
+    signalSocket->open(QUrl(signalUrl));
+    qInfo() << "[Mainwindow] 接收端已启动(信令)";
 }
 
+void MainWindow::setupSignalUi()
+{
+    if (roomDock && roomUserList && roomEventLog && signalStateLabel && roomCountLabel) return;
 
+    // 优先使用 UI(XML) 中已有控件。
+    roomDock = findChild<QDockWidget*>("roomDock");
+    signalStateLabel = findChild<QLabel*>("signalStateLabel");
+    roomCountLabel = findChild<QLabel*>("roomCountLabel");
+    roomUserList = findChild<QListWidget*>("roomUserList");
+    roomEventLog = findChild<QPlainTextEdit*>("roomEventLog");
 
+    // 若 UI 尚未放入这些控件，则回退到代码创建，保证兼容旧 ui 文件。
+    if (!roomDock || !signalStateLabel || !roomCountLabel || !roomUserList || !roomEventLog) {
+        roomDock = new QDockWidget("房间成员", this);
+        roomDock->setObjectName("roomDock");
 
+        QWidget *panel = new QWidget(roomDock);
+        QVBoxLayout *layout = new QVBoxLayout(panel);
+        layout->setContentsMargins(8, 8, 8, 8);
+        layout->setSpacing(6);
+
+        signalStateLabel = new QLabel("信令: 未连接", panel);
+        signalStateLabel->setObjectName("signalStateLabel");
+        roomCountLabel = new QLabel("在线: 0", panel);
+        roomCountLabel->setObjectName("roomCountLabel");
+        roomUserList = new QListWidget(panel);
+        roomUserList->setObjectName("roomUserList");
+        roomUserList->setContextMenuPolicy(Qt::CustomContextMenu);
+        roomEventLog = new QPlainTextEdit(panel);
+        roomEventLog->setObjectName("roomEventLog");
+        roomEventLog->setReadOnly(true);
+        roomEventLog->setMaximumBlockCount(200);
+        roomEventLog->setPlaceholderText("会议事件日志");
+
+        layout->addWidget(signalStateLabel);
+        layout->addWidget(roomCountLabel);
+        layout->addWidget(roomUserList, 1);
+        layout->addWidget(roomEventLog, 1);
+        panel->setLayout(layout);
+
+        roomDock->setWidget(panel);
+        addDockWidget(Qt::RightDockWidgetArea, roomDock);
+    } else {
+        roomUserList->setContextMenuPolicy(Qt::CustomContextMenu);
+        roomEventLog->setReadOnly(true);
+        roomEventLog->setMaximumBlockCount(200);
+    }
+
+    connect(roomUserList, &QListWidget::itemDoubleClicked, this, &MainWindow::onRoomUserDoubleClicked, Qt::UniqueConnection);
+    connect(roomUserList, &QListWidget::customContextMenuRequested, this, &MainWindow::onRoomListContextMenu, Qt::UniqueConnection);
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        bool ok = false;
+        const int idx = watched->property("tileIndex").toInt(&ok);
+        if (ok && idx >= 0 && idx < remoteTiles.size()) {
+            const QString stream = remoteTiles[idx].stream;
+            if (stream.isEmpty()) return true;
+
+            const MemberState st = memberStates.value(stream);
+            if (!st.pub) {
+                appendRoomEvent("该成员未推流，无法拉取");
+                return true;
+            }
+
+            if (focusMode && focusedStream == stream) {
+                focusMode = false;
+                focusedStream.clear();
+                currentRemoteStream.clear();
+                if (remoteStack && remoteGridPage) {
+                    remoteStack->setCurrentWidget(remoteGridPage);
+                }
+                applyFocusAudioRouting();
+                appendRoomEvent("已退出聚焦视图");
+                refreshRemoteTiles();
+                return true;
+            }
+
+            focusedStream = stream;
+            focusMode = true;
+            preferredRemoteStream = stream;
+            if (remoteStack && ui && ui->remoteVideolabel) {
+                remoteStack->setCurrentWidget(ui->remoteVideolabel);
+            }
+            startPullStream(stream);
+            appendRoomEvent(QString("聚焦成员: %1").arg(stream));
+            refreshRemoteTiles();
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::setupRemoteGridUi()
+{
+    if (!ui || !ui->centralwidget || !ui->remoteVideolabel) return;
+    if (remoteContainer || remoteStack) return;
+
+    remoteContainer = new QWidget(ui->centralwidget);
+    remoteContainer->setObjectName("remoteContainer");
+    remoteContainer->setGeometry(ui->remoteVideolabel->geometry());
+
+    remoteStack = new QStackedLayout(remoteContainer);
+    remoteStack->setContentsMargins(0, 0, 0, 0);
+    remoteStack->setSpacing(0);
+
+    remoteGridPage = new QWidget(remoteContainer);
+    auto *grid = new QGridLayout(remoteGridPage);
+    grid->setContentsMargins(2, 2, 2, 2);
+    grid->setHorizontalSpacing(6);
+    grid->setVerticalSpacing(6);
+
+    remoteTiles.clear();
+    remoteTiles.reserve(4);
+
+    for (int i = 0; i < 4; ++i) {
+        RemoteTile tile;
+        tile.frame = new QFrame(remoteGridPage);
+        tile.frame->setFrameShape(QFrame::StyledPanel);
+        tile.frame->setStyleSheet("QFrame{background:#101010;border:1px solid #4a4a4a;border-radius:6px;}");
+        tile.frame->setProperty("tileIndex", i);
+        tile.frame->installEventFilter(this);
+
+        auto *vbox = new QVBoxLayout(tile.frame);
+        vbox->setContentsMargins(6, 6, 6, 6);
+        vbox->setSpacing(4);
+
+        tile.videoLabel = new QLabel("空席位", tile.frame);
+        tile.videoLabel->setAlignment(Qt::AlignCenter);
+        tile.videoLabel->setMinimumSize(120, 80);
+        tile.videoLabel->setStyleSheet("QLabel{background:#1a1a1a;color:#d0d0d0;}");
+        tile.videoLabel->setProperty("tileIndex", i);
+        tile.videoLabel->installEventFilter(this);
+
+        tile.nameLabel = new QLabel("", tile.frame);
+        tile.nameLabel->setStyleSheet("QLabel{color:#f0f0f0;font-weight:600;}");
+        tile.stateLabel = new QLabel("", tile.frame);
+        tile.stateLabel->setStyleSheet("QLabel{color:#a0a0a0;}");
+
+        vbox->addWidget(tile.videoLabel, 1);
+        vbox->addWidget(tile.nameLabel);
+        vbox->addWidget(tile.stateLabel);
+        grid->addWidget(tile.frame, i / 2, i % 2);
+
+        remoteTiles.push_back(tile);
+    }
+
+    ui->remoteVideolabel->setParent(remoteContainer);
+    ui->remoteVideolabel->setMinimumSize(120, 80);
+    ui->remoteVideolabel->setAlignment(Qt::AlignCenter);
+    ui->remoteVideolabel->setStyleSheet("QLabel{background:black;color:#d0d0d0;}");
+
+    remoteStack->addWidget(remoteGridPage);
+    remoteStack->addWidget(ui->remoteVideolabel);
+    remoteStack->setCurrentWidget(remoteGridPage);
+    remoteContainer->show();
+}
+
+void MainWindow::refreshRemoteTiles()
+{
+    if (remoteTiles.isEmpty()) return;
+
+    QStringList streams = memberStates.keys();
+    std::sort(streams.begin(), streams.end(), [this](const QString &a, const QString &b) {
+        const bool ah = memberStates.value(a).host;
+        const bool bh = memberStates.value(b).host;
+        if (ah != bh) return ah > bh;
+        return a < b;
+    });
+
+    streamToTile.clear();
+    for (int i = 0; i < remoteTiles.size(); ++i) {
+        auto &tile = remoteTiles[i];
+        const QString oldStream = tile.stream;
+        tile.stream.clear();
+
+        if (i >= streams.size()) {
+            tile.hasFrame = false;
+            tile.videoLabel->setPixmap(QPixmap());
+            tile.videoLabel->setText("空席位");
+            tile.nameLabel->clear();
+            tile.stateLabel->clear();
+            tile.frame->setStyleSheet("QFrame{background:#101010;border:1px solid #4a4a4a;border-radius:6px;}");
+            continue;
+        }
+
+        const QString stream = streams[i];
+        const MemberState st = memberStates.value(stream);
+        tile.stream = stream;
+        streamToTile.insert(stream, i);
+
+        QString name = stream;
+        if (st.host) name += " [主持人]";
+        tile.nameLabel->setText(name);
+
+        QStringList flags;
+        if (!st.pub) flags << "未推流";
+        if (!st.audio) flags << "麦关";
+        if (!st.video) flags << "摄关";
+        tile.stateLabel->setText(flags.join(" | "));
+
+        if (oldStream != stream) {
+            tile.hasFrame = false;
+            tile.videoLabel->setPixmap(QPixmap());
+        }
+        if (!tile.hasFrame) {
+            tile.videoLabel->setText(st.pub ? "双击聚焦并拉流" : "未推流");
+        } else {
+            tile.videoLabel->setText("");
+        }
+
+        const bool focused = focusMode && focusedStream == stream;
+        if (focused) {
+            tile.frame->setStyleSheet("QFrame{background:#101010;border:2px solid #2e86de;border-radius:6px;}");
+        } else {
+            tile.frame->setStyleSheet("QFrame{background:#101010;border:1px solid #4a4a4a;border-radius:6px;}");
+        }
+    }
+
+    if (remoteStack) {
+        if (focusMode && ui && ui->remoteVideolabel) {
+            remoteStack->setCurrentWidget(ui->remoteVideolabel);
+        } else if (remoteGridPage) {
+            remoteStack->setCurrentWidget(remoteGridPage);
+        }
+    }
+}
+
+void MainWindow::applyTileFrame(const QString &stream, const QImage &img)
+{
+    if (stream.isEmpty()) return;
+    const int idx = streamToTile.value(stream, -1);
+    if (idx < 0 || idx >= remoteTiles.size()) return;
+
+    auto &tile = remoteTiles[idx];
+    if (!tile.videoLabel) return;
+
+    tile.videoLabel->setPixmap(
+        QPixmap::fromImage(img).scaled(tile.videoLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation)
+    );
+    tile.videoLabel->setText("");
+    tile.hasFrame = true;
+}
+
+void MainWindow::clearAllTileFrames()
+{
+    for (auto &tile : remoteTiles) {
+        tile.hasFrame = false;
+        if (tile.videoLabel) {
+            tile.videoLabel->setPixmap(QPixmap());
+            if (tile.stream.isEmpty()) {
+                tile.videoLabel->setText("空席位");
+            } else {
+                const MemberState st = memberStates.value(tile.stream);
+                tile.videoLabel->setText(st.pub ? "双击聚焦并拉流" : "未推流");
+            }
+        }
+    }
+}
+
+bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
+{
+    if (askRoomIfEmpty && roomId.isEmpty()) {
+        bool ok = false;
+        QString suggest = roomId;
+        if (suggest.isEmpty()) {
+            suggest = QString::number(QRandomGenerator::global()->bounded(100000, 999999));
+        }
+        const QString input = QInputDialog::getText(
+            this, "输入房间号", "房间号：", QLineEdit::Normal, suggest, &ok
+        ).trimmed();
+        if (!ok || input.isEmpty()) return false;
+        roomId = input;
+    } else if (roomId.isEmpty()) {
+        roomId = QString::number(QRandomGenerator::global()->bounded(100000, 999999));
+    }
+    if (userId.isEmpty()) {
+        userId = QString("u%1").arg(QRandomGenerator::global()->bounded(1000, 9999));
+    }
+    selfStream = QString("%1_%2").arg(roomId, userId);
+    return true;
+}
+
+void MainWindow::appendRoomEvent(const QString &text)
+{
+    const QString msg = QString("[%1] %2")
+                            .arg(QDateTime::currentDateTime().toString("hh:mm:ss"), text);
+    if (roomEventLog) {
+        roomEventLog->appendPlainText(msg);
+    }
+    qInfo() << msg;
+}
+
+void MainWindow::refreshRoomUserList()
+{
+    if (!roomUserList) return;
+
+    QString selectedStream;
+    if (auto *cur = roomUserList->currentItem()) {
+        selectedStream = cur->data(Qt::UserRole).toString();
+    }
+
+    QStringList streams = memberStates.keys();
+    std::sort(streams.begin(), streams.end(), [this](const QString &a, const QString &b) {
+        const bool ah = memberStates.value(a).host;
+        const bool bh = memberStates.value(b).host;
+        if (ah != bh) return ah > bh;
+        return a < b;
+    });
+
+    roomUserList->blockSignals(true);
+    roomUserList->clear();
+    for (const QString &stream : streams) {
+        const MemberState st = memberStates.value(stream);
+        QString text = stream;
+        if (st.host) text += " [主持人]";
+        if (!st.pub) text += " [未推流]";
+        if (!st.audio) text += " [麦关]";
+        if (!st.video) text += " [摄关]";
+
+        auto *item = new QListWidgetItem(text, roomUserList);
+        item->setData(Qt::UserRole, stream);
+        if (st.host) {
+            QFont f = item->font();
+            f.setBold(true);
+            item->setFont(f);
+        }
+        if (!selectedStream.isEmpty() && stream == selectedStream) {
+            roomUserList->setCurrentItem(item);
+        }
+    }
+    roomUserList->blockSignals(false);
+
+    if (roomCountLabel) {
+        roomCountLabel->setText(QString("在线: %1").arg(streams.size()));
+    }
+    refreshRemoteTiles();
+    syncGridPullers();
+}
+
+void MainWindow::sendSignalJoin()
+{
+    if (!signalSocket || !signalConnected) return;
+    if (!ensureRoomIdentity(false)) return;
+
+    QJsonObject obj;
+    obj["type"] = "join";
+    obj["room"] = roomId;
+    obj["user"] = userId;
+    obj["stream"] = selfStream;
+    obj["audio"] = localAudioOn;
+    obj["video"] = localVideoOn;
+    obj["pub"] = isPublishing;
+
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    appendRoomEvent(QString("已加入房间 %1，用户 %2").arg(roomId, selfStream));
+}
+
+void MainWindow::sendSignalLeave()
+{
+    if (!signalSocket || signalSocket->state() != QAbstractSocket::ConnectedState) return;
+
+    QJsonObject obj;
+    obj["type"] = "leave";
+    obj["room"] = roomId;
+    obj["stream"] = selfStream;
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::sendSignalUpdate()
+{
+    if (!signalSocket || !signalConnected) return;
+
+    QJsonObject obj;
+    obj["type"] = "update";
+    obj["room"] = roomId;
+    obj["stream"] = selfStream;
+    obj["audio"] = localAudioOn;
+    obj["video"] = localVideoOn;
+    obj["pub"] = isPublishing;
+
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::sendSignalCmd(const QString &toStream, const QString &action)
+{
+    if (!signalSocket || !signalConnected || toStream.isEmpty() || action.isEmpty()) return;
+
+    QJsonObject obj;
+    obj["type"] = "cmd";
+    obj["room"] = roomId;
+    obj["to"] = toStream;
+    obj["action"] = action;
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::onSignalConnected()
+{
+    signalConnected = true;
+    if (signalStateLabel) signalStateLabel->setText("信令: 已连接");
+    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
+    sendSignalJoin();
+}
+
+void MainWindow::onSignalDisconnected()
+{
+    signalConnected = false;
+    if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
+    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
+    appendRoomEvent("信令已断开");
+
+    // 手动断开信令时，立即停止当前拉流，避免继续播放远端。
+    stopCurrentPull(true);
+    focusedStream.clear();
+    focusMode = false;
+    clearAllTileFrames();
+    if (remoteStack && remoteGridPage) {
+        remoteStack->setCurrentWidget(remoteGridPage);
+    }
+    if (ui && ui->remoteVideolabel) {
+        ui->remoteVideolabel->clear();
+    }
+    memberStates.clear();
+    roomHostStream.clear();
+    refreshRoomUserList();
+}
+
+void MainWindow::onSignalTextMessage(const QString &msg)
+{
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(msg.toUtf8(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
+    const QJsonObject obj = doc.object();
+    const QString type = obj.value("type").toString();
+
+    if (type == "members") {
+        const QString room = obj.value("room").toString();
+        if (!roomId.isEmpty() && room != roomId) return;
+
+        QHash<QString, MemberState> newStates;
+        roomHostStream.clear();
+
+        const QJsonArray arr = obj.value("members").toArray();
+        for (const QJsonValue &v : arr) {
+            if (!v.isObject()) continue;
+            const QJsonObject m = v.toObject();
+            MemberState st;
+            st.user = m.value("user").toString();
+            st.stream = m.value("stream").toString();
+            st.audio = m.value("audio").toBool(true);
+            st.video = m.value("video").toBool(true);
+            st.pub = m.value("pub").toBool(false);
+            st.host = (m.value("role").toString() == "host");
+            if (st.stream.isEmpty()) continue;
+            if (st.host) roomHostStream = st.stream;
+            newStates.insert(st.stream, st);
+        }
+
+        if (roomHostStream.isEmpty() && !newStates.isEmpty()) {
+            QStringList streams = newStates.keys();
+            std::sort(streams.begin(), streams.end());
+            roomHostStream = streams.first();
+            newStates[roomHostStream].host = true;
+        }
+
+        memberStates = newStates;
+        refreshRoomUserList();
+
+        if (memberStates.contains(selfStream)) {
+            const MemberState selfState = memberStates.value(selfStream);
+            localAudioOn = selfState.audio;
+            localVideoOn = selfState.video;
+        }
+
+        // 不在 members 刷新里主动 stopCurrentPull()，避免状态瞬时抖动触发误停拉流。
+        // 拉流切换仅由用户双击、断开信令、结束会议这三条路径控制。
+        return;
+    }
+
+    if (type == "ctrl") {
+        const QString to = obj.value("to").toString();
+        const QString action = obj.value("action").toString();
+        if (to != selfStream) return;
+
+        if (action == "mute_audio") {
+            localAudioOn = false;
+            appendRoomEvent("主持人已将你静音");
+            return;
+        }
+        if (action == "mute_video") {
+            localVideoOn = false;
+            appendRoomEvent("主持人已关闭你的摄像头");
+            return;
+        }
+        if (action == "kick") {
+            appendRoomEvent("你已被主持人移出会议");
+            on_stopMeetingButton_clicked();
+            return;
+        }
+    }
+}
+
+void MainWindow::onRoomUserDoubleClicked(QListWidgetItem *item)
+{
+    if (!item) return;
+    const QString stream = item->data(Qt::UserRole).toString();
+    if (stream.isEmpty()) return;
+    const MemberState st = memberStates.value(stream);
+    if (!st.pub) {
+        appendRoomEvent("该成员未推流，无法拉取");
+        return;
+    }
+    focusMode = true;
+    focusedStream = stream;
+    if (remoteStack && ui && ui->remoteVideolabel) {
+        remoteStack->setCurrentWidget(ui->remoteVideolabel);
+    }
+    preferredRemoteStream = stream;
+    startPullStream(stream);
+    refreshRemoteTiles();
+}
+
+void MainWindow::onRoomListContextMenu(const QPoint &pos)
+{
+    if (!roomUserList) return;
+    QListWidgetItem *item = roomUserList->itemAt(pos);
+    if (!item) return;
+
+    const QString targetStream = item->data(Qt::UserRole).toString();
+    if (targetStream.isEmpty() || targetStream == selfStream) return;
+    if (!memberStates.value(selfStream).host) {
+        appendRoomEvent("仅主持人可管理成员");
+        return;
+    }
+
+    QMenu menu(this);
+    QAction *muteAudio = menu.addAction("静音该成员");
+    QAction *muteVideo = menu.addAction("关闭该成员摄像头");
+    QAction *kick = menu.addAction("踢出该成员");
+    QAction *picked = menu.exec(roomUserList->viewport()->mapToGlobal(pos));
+    if (!picked) return;
+
+    if (picked == muteAudio) {
+        sendSignalCmd(targetStream, "mute_audio");
+        appendRoomEvent(QString("已对 %1 发送静音").arg(targetStream));
+    } else if (picked == muteVideo) {
+        sendSignalCmd(targetStream, "mute_video");
+        appendRoomEvent(QString("已对 %1 发送关闭摄像头").arg(targetStream));
+    } else if (picked == kick) {
+        sendSignalCmd(targetStream, "kick");
+        appendRoomEvent(QString("已踢出 %1").arg(targetStream));
+    }
+}
+
+QStringList MainWindow::currentDisplayStreams() const
+{
+    QStringList streams;
+    for (const auto &tile : remoteTiles) {
+        if (tile.stream.isEmpty()) continue;
+        const MemberState st = memberStates.value(tile.stream);
+        if (st.pub) streams.push_back(tile.stream);
+    }
+    return streams;
+}
+
+void MainWindow::applyFocusAudioRouting()
+{
+    for (auto it = pullSessions.begin(); it != pullSessions.end(); ++it) {
+        PullSession *sess = it.value();
+        if (!sess || !sess->puller) continue;
+        const bool enable = focusMode && !focusedStream.isEmpty() && sess->stream == focusedStream;
+        QMetaObject::invokeMethod(sess->puller, "setAudioEnabled", Qt::QueuedConnection, Q_ARG(bool, enable));
+    }
+}
+
+void MainWindow::ensurePullSession(const QString &stream)
+{
+    if (stream.isEmpty()) return;
+    if (pullSessions.contains(stream)) return;
+
+    PullSession *sess = new PullSession;
+    sess->stream = stream;
+    sess->puller = new rtmppuller(nullptr);
+    sess->thread = new QThread(this);
+    sess->thread->setObjectName(QString("pullThread_%1").arg(stream));
+    sess->puller->moveToThread(sess->thread);
+    pullSessions.insert(stream, sess);
+
+    connect(sess->puller, &rtmppuller::finished, sess->thread, &QThread::quit, Qt::QueuedConnection);
+    connect(sess->thread, &QThread::finished, sess->puller, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(sess->puller, &rtmppuller::videoFrameReady, this, [this, stream](const QImage &img) {
+        applyTileFrame(stream, img);
+        if (focusMode && focusedStream == stream && ui && ui->remoteVideolabel) {
+            ui->remoteVideolabel->setPixmap(
+                QPixmap::fromImage(img).scaled(ui->remoteVideolabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation)
+            );
+        }
+    });
+    connect(sess->puller, &rtmppuller::errorOccurred, this, [this, stream](const QString &e) {
+        PullSession *s = pullSessions.value(stream, nullptr);
+        if (!s) return;
+        appendRoomEvent(QString("拉流错误(%1): %2").arg(stream, e));
+        if (meetingStopped || !signalConnected) return;
+        const QStringList needed = currentDisplayStreams();
+        if (!needed.contains(stream)) return;
+        if (++s->retryCount > 5) {
+            appendRoomEvent(QString("拉流重试超过上限: %1").arg(stream));
+            return;
+        }
+        const int retryIndex = s->retryCount;
+        QTimer::singleShot(300 * retryIndex, this, [this, stream]() {
+            if (meetingStopped || !signalConnected) return;
+            if (!pullSessions.contains(stream)) return;
+            const QStringList needed2 = currentDisplayStreams();
+            if (!needed2.contains(stream)) return;
+            stopPullSession(stream, false);
+            ensurePullSession(stream);
+            applyFocusAudioRouting();
+        });
+    });
+
+    sess->thread->start(QThread::HighPriority);
+    const QString url = QString("rtmp://127.0.0.1/live/%1").arg(stream);
+    QMetaObject::invokeMethod(sess->puller, "startPull", Qt::QueuedConnection, Q_ARG(QString, url));
+    appendRoomEvent(QString("开始拉流: %1").arg(stream));
+}
+
+void MainWindow::stopPullSession(const QString &stream, bool waitForQuit)
+{
+    PullSession *sess = pullSessions.value(stream, nullptr);
+    if (!sess) return;
+
+    if (sess->puller) {
+        disconnect(sess->puller, nullptr, this, nullptr);
+        sess->puller->stop();
+    }
+    if (sess->thread) {
+        sess->thread->quit();
+        if (waitForQuit) {
+            if (!sess->thread->wait(2500)) {
+                qWarning() << "[RtmpPuller]" << stream << "stop wait timeout, detach";
+                sess->thread->requestInterruption();
+                sess->thread->setParent(nullptr);
+                QObject::connect(sess->thread, &QThread::finished, sess->thread, &QObject::deleteLater, Qt::UniqueConnection);
+            } else {
+                delete sess->thread;
+            }
+        } else {
+            if (!sess->thread->wait(200)) {
+                sess->thread->requestInterruption();
+                sess->thread->setParent(nullptr);
+                QObject::connect(sess->thread, &QThread::finished, sess->thread, &QObject::deleteLater, Qt::UniqueConnection);
+            } else {
+                delete sess->thread;
+            }
+        }
+    }
+
+    pullSessions.remove(stream);
+    delete sess;
+}
+
+void MainWindow::stopAllPullSessions(bool waitForQuit)
+{
+    const QStringList keys = pullSessions.keys();
+    for (const QString &s : keys) {
+        stopPullSession(s, waitForQuit);
+    }
+}
+
+void MainWindow::syncGridPullers()
+{
+    if (!signalConnected || meetingStopped) {
+        stopAllPullSessions(false);
+        return;
+    }
+
+    const QStringList neededList = currentDisplayStreams();
+    const QSet<QString> needed = QSet<QString>(neededList.begin(), neededList.end());
+    const QStringList current = pullSessions.keys();
+
+    for (const QString &s : current) {
+        if (!needed.contains(s)) {
+            stopPullSession(s, false);
+        }
+    }
+    for (const QString &s : needed) {
+        ensurePullSession(s);
+    }
+    applyFocusAudioRouting();
+}
+
+void MainWindow::startPullStream(const QString &stream)
+{
+    if (stream.isEmpty()) return;
+    currentRemoteStream = stream;
+    focusedStream = stream;
+    focusMode = true;
+    if (remoteStack && ui && ui->remoteVideolabel) {
+        remoteStack->setCurrentWidget(ui->remoteVideolabel);
+    }
+    ensurePullSession(stream);
+    applyFocusAudioRouting();
+}
+
+void MainWindow::stopCurrentPull(bool waitForQuit)
+{
+    stopAllPullSessions(waitForQuit);
+    currentRemoteStream.clear();
+}

@@ -1,5 +1,5 @@
 # SmartMeet（中文需求说明）
-基于 Qt 6 + FFmpeg + OpenCV + ZLMediaKit(WebRTC SFU) 的多平台智能视频会议与远程教学系统。  
+基于 Qt 6 + FFmpeg + OpenCV + ZLMediaKit(WebRTC SFU) 的多平台智能视频会议与远程教学系统（类腾讯会议）。  
 本文件用于保存项目初版需求与总体规划，便于后续对话与协作延续。
 
 ## 目标

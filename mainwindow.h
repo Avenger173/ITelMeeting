@@ -2,37 +2,48 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include<QTimer>
-#include<opencv2/opencv.hpp>
-#include<QFile>
-#include<QAudioFormat>
-#include<QIODevice>
-#include<QAudioDevice>
-#include<QMediaDevices>
-#include<QAudioSink>
-#include<QMutex>
-#include<atomic>
-#include<QCheckBox>
-#include<QCloseEvent>
-#include<QElapsedTimer>
-#include<QThread>
-#include"videocapture.h"
-#include"audiocapture.h"
-#include"avrecorder.h"
-#include"avsender.h"
-#include"avreceiver.h"
-#include"rtmppusher.h"
-#include"avnetencoder.h"
-#include"rtmppuller.h"
-#include"avaudioencoder.h"
-extern "C"{
-#include<libavcodec/avcodec.h>
-#include<libavformat/avformat.h>
-#include<libavutil/opt.h>
-#include<libavdevice/avdevice.h>
-#include<libswscale/swscale.h>
-#include<libswresample/swresample.h>
+#include <QTimer>
+#include <QFile>
+#include <QAudioFormat>
+#include <QIODevice>
+#include <QAudioDevice>
+#include <QMediaDevices>
+#include <QAudioSink>
+#include <QCloseEvent>
+#include <QElapsedTimer>
+#include <QThread>
+#include <QWebSocket>
+#include <QHash>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QDockWidget>
+#include <QPushButton>
+#include <QPlainTextEdit>
+#include <QLabel>
+#include <QFrame>
+#include <QStackedLayout>
+#include <QVector>
+#include <QSet>
+
+#include "videocapture.h"
+#include "audiocapture.h"
+#include "avrecorder.h"
+#include "avsender.h"
+#include "avreceiver.h"
+#include "rtmppusher.h"
+#include "avnetencoder.h"
+#include "rtmppuller.h"
+#include "avaudioencoder.h"
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/opt.h>
+#include <libavdevice/avdevice.h>
+#include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
 }
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
@@ -46,10 +57,10 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
-
     void on_startMeetingButton_clicked();
     void on_switchCameraButton_clicked();
     void on_captureImageButton_clicked();
@@ -58,65 +69,146 @@ private slots:
     void on_startRecordButton_clicked();
     void on_stopRecordButton_clicked();
 
-    void onDebugStartEmptyRecord();//只open写头
-    void onDebugStopEmptyRecord();//只close写尾
-    void onDebugGen3sTestVideo();//生成3秒，30fps,640x480的测试视频(彩条+时间戳)
-    void onDebugStartCamRecord();//开始：仅视频
-    void onDebugStopCamRecord();//停止：写尾并关闭
-    void onDebugStartEmptyAV();//openAV(带音频）+立即close();
-    void onDebugStartAudioRecord();//仅音频
+    void onDebugStartEmptyRecord();
+    void onDebugStopEmptyRecord();
+    void onDebugGen3sTestVideo();
+    void onDebugStartCamRecord();
+    void onDebugStopCamRecord();
+    void onDebugStartEmptyAV();
+    void onDebugStartAudioRecord();
     void onDebugStopAudioRecord();
-
-    void onDebugStartAVRecord();//开始音视频同步录制
-    void onDebugStopAVRecord();//停止音视频录制
+    void onDebugStartAVRecord();
+    void onDebugStopAVRecord();
 
     void on_startReceiveButton_clicked();
-
     void on_stopMeetingButton_clicked();
 
+    void onSignalConnected();
+    void onSignalDisconnected();
+    void onSignalTextMessage(const QString &msg);
+    void onRoomUserDoubleClicked(QListWidgetItem *item);
+    void onRoomListContextMenu(const QPoint &pos);
+
 private:
-    Ui::MainWindow *ui;
-    QTimer* timer = nullptr;
+    struct MemberState {
+        QString user;
+        QString stream;
+        bool audio = true;
+        bool video = true;
+        bool pub = false;
+        bool host = false;
+    };
+
+    void setupSignalUi();
+    bool ensureRoomIdentity(bool askRoomIfEmpty);
+    void appendRoomEvent(const QString &text);
+    void refreshRoomUserList();
+
+    void sendSignalJoin();
+    void sendSignalLeave();
+    void sendSignalUpdate();
+    void sendSignalCmd(const QString &toStream, const QString &action);
+
+    void setupRemoteGridUi();
+    void refreshRemoteTiles();
+    void applyTileFrame(const QString &stream, const QImage &img);
+    void clearAllTileFrames();
+    void syncGridPullers();
+    void ensurePullSession(const QString &stream);
+    void stopPullSession(const QString &stream, bool waitForQuit = true);
+    void stopAllPullSessions(bool waitForQuit = true);
+    void applyFocusAudioRouting();
+    QStringList currentDisplayStreams() const;
+
+    void startPullStream(const QString &stream);
+    void stopCurrentPull(bool waitForQuit = true);
+
+private:
+    Ui::MainWindow *ui = nullptr;
+    QTimer *timer = nullptr;
+
     QThread *videoThread = nullptr;
     VideoCapture *videoWorker = nullptr;
+
     QThread *audioThread = nullptr;
     AudioCapture *audioWorker = nullptr;
-    QAudioSink* audioSink = nullptr;
-    QIODevice* audioOutput = nullptr;
-    SwrContext* playSwrCtx = nullptr; // 播放端重采样上下文
-    QAudioFormat playFormat;           // 播放端格式
+
+    QAudioSink *audioSink = nullptr;
+    QIODevice *audioOutput = nullptr;
+    SwrContext *playSwrCtx = nullptr;
+    QAudioFormat playFormat;
     QMetaObject::Connection recordConn;
-    bool isRecording=false;
+    QMetaObject::Connection audioSendConn;
+    QMetaObject::Connection videoSendConn;
 
-    AvRecorder *recorder=nullptr;
-    bool camRecording=false;//是否正在"摄像头->本地视频"录制
-    int recFps=30;//目标录制FPS
-    qint64 lastPushMs=0;//上一次写入的时间戳(ms)
+    bool isRecording = false;
+    AvRecorder *recorder = nullptr;
+    bool camRecording = false;
+    int recFps = 30;
+    qint64 lastPushMs = 0;
 
-    //发送
-    AVSender *sender=nullptr;
-    //接收
-    AVReceiver *receiver=nullptr;
+    AVSender *sender = nullptr;
+    AVReceiver *receiver = nullptr;
 
-    RtmpPusher* pusher=nullptr;
+    RtmpPusher *pusher = nullptr;
+    AvNetEncoder *netEnc = nullptr;
+    AvAudioEncoder *audioEnc = nullptr;
 
-    //避免重复stop导致的重复delete
-    bool audioStopped=false;
-    bool meetingStopped=false;
-    bool audioPlayEnabled=false;
+    struct PullSession {
+        QString stream;
+        rtmppuller *puller = nullptr;
+        QThread *thread = nullptr;
+        int retryCount = 0;
+    };
+    QHash<QString, PullSession*> pullSessions;
 
-    AvNetEncoder* netEnc=nullptr;
+    QThread *encThread = nullptr;
+    QThread *audioEncThread = nullptr;
+    QThread *pushThread = nullptr;
 
-    rtmppuller* puller=nullptr;
-    QThread* pullThead=nullptr;
-    QThread* encThread=nullptr;
+    bool audioStopped = false;
+    bool meetingStopped = false;
+    bool audioPlayEnabled = false;
 
-    AvAudioEncoder* audioEnc=nullptr;
+    QWebSocket *signalSocket = nullptr;
+    bool signalConnected = false;
+    QString signalUrl = "ws://127.0.0.1:9001";
+    QString roomId;
+    QString userId;
+    QString selfStream;
+    QString roomHostStream;
 
+    bool localAudioOn = true;
+    bool localVideoOn = true;
+    bool isPublishing = false;
 
-    QThread* audioEncThread=nullptr;
-    QThread* pushThread=nullptr;
+    QHash<QString, MemberState> memberStates;
+    QString preferredRemoteStream;
+    QString currentRemoteStream;
+    bool stopMeetingInProgress = false;
 
+    QDockWidget *roomDock = nullptr;
+    QPushButton *connectSignalButton = nullptr;
+    QLabel *signalStateLabel = nullptr;
+    QLabel *roomCountLabel = nullptr;
+    QListWidget *roomUserList = nullptr;
+    QPlainTextEdit *roomEventLog = nullptr;
 
+    struct RemoteTile {
+        QFrame *frame = nullptr;
+        QLabel *videoLabel = nullptr;
+        QLabel *nameLabel = nullptr;
+        QLabel *stateLabel = nullptr;
+        QString stream;
+        bool hasFrame = false;
+    };
+    QWidget *remoteContainer = nullptr;
+    QWidget *remoteGridPage = nullptr;
+    QStackedLayout *remoteStack = nullptr;
+    QVector<RemoteTile> remoteTiles;
+    QHash<QString, int> streamToTile;
+    QString focusedStream;
+    bool focusMode = false;
 };
+
 #endif // MAINWINDOW_H

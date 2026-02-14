@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
@@ -24,7 +24,10 @@
      </rect>
     </property>
     <property name="text">
-     <string>TextLabel</string>
+     <string>远端画面</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignmentFlag::AlignCenter</set>
     </property>
    </widget>
    <widget class="QLabel" name="localVideolabel">
@@ -42,14 +45,8 @@
       <height>240</height>
      </size>
     </property>
-    <property name="baseSize">
-     <size>
-      <width>320</width>
-      <height>240</height>
-     </size>
-    </property>
     <property name="text">
-     <string>TextLabel</string>
+     <string>本地画面</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -65,7 +62,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>启动会议</string>
+     <string>开始会议</string>
     </property>
    </widget>
    <widget class="QPushButton" name="captureImageButton">
@@ -195,14 +192,14 @@
    <widget class="QPushButton" name="startReceiveButton">
     <property name="geometry">
      <rect>
-      <x>340</x>
-      <y>570</y>
-      <width>93</width>
+      <x>270</x>
+      <y>510</y>
+      <width>121</width>
       <height>28</height>
      </rect>
     </property>
     <property name="text">
-     <string>开始接收</string>
+     <string>连接信令</string>
     </property>
    </widget>
    <widget class="QPushButton" name="stopMeetingButton">
@@ -215,8 +212,62 @@
      </rect>
     </property>
     <property name="text">
-     <string>停止会议</string>
+     <string>结束会议</string>
     </property>
+   </widget>
+  </widget>
+  <widget class="QDockWidget" name="roomDock">
+   <property name="windowTitle">
+    <string>房间成员</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>2</number>
+   </attribute>
+   <widget class="QWidget" name="dockWidgetContents">
+    <layout class="QVBoxLayout" name="roomDockLayout">
+     <property name="spacing">
+      <number>6</number>
+     </property>
+     <property name="leftMargin">
+      <number>8</number>
+     </property>
+     <property name="topMargin">
+      <number>8</number>
+     </property>
+     <property name="rightMargin">
+      <number>8</number>
+     </property>
+     <property name="bottomMargin">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="signalStateLabel">
+       <property name="text">
+        <string>信令: 未连接</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="roomCountLabel">
+       <property name="text">
+        <string>在线: 0</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QListWidget" name="roomUserList"/>
+     </item>
+     <item>
+      <widget class="QPlainTextEdit" name="roomEventLog">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>会议事件日志</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">

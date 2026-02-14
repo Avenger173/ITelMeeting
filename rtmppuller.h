@@ -26,12 +26,15 @@ public:
 public slots:
     void startPull(const QString& url);
     void stop();
+    void setAudioEnabled(bool enabled);
 signals:
     void videoFrameReady(const QImage& img);
     void errorOccurred(const QString& err);
     void finished();
 private:
+    static int interruptCb(void *opaque);
     QAtomicInteger<bool> stopFlag{false};
+    QAtomicInteger<bool> audioEnabled_{true};
 
     AVFormatContext* fmtCtx=nullptr;
     AVCodecContext* vDecCtx=nullptr;
