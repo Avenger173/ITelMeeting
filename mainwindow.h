@@ -24,6 +24,7 @@
 #include <QStackedLayout>
 #include <QVector>
 #include <QSet>
+#include <QAction>
 
 #include "videocapture.h"
 #include "audiocapture.h"
@@ -94,6 +95,7 @@ private:
         bool video = true;
         bool pub = false;
         bool host = false;
+        bool cohost = false;
     };
 
     void setupSignalUi();
@@ -101,6 +103,7 @@ private:
     void appendRoomEvent(const QString &text);
     void refreshRoomUserList();
     void setupBottomMenus();
+    void refreshSelfControlActions();
 
     void sendSignalJoin();
     void sendSignalLeave();
@@ -190,6 +193,8 @@ private:
     QLabel *roomCountLabel = nullptr;
     QListWidget *roomUserList = nullptr;
     QPlainTextEdit *roomEventLog = nullptr;
+    QAction *selfMicToggleAction = nullptr;
+    QAction *selfCamToggleAction = nullptr;
 
     struct RemoteTile {
         QFrame *frame = nullptr;

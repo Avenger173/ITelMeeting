@@ -110,6 +110,7 @@ void MainWindow::on_startMeetingButton_clicked()
     audioStopped = false;
     localAudioOn = true;
     localVideoOn = true;
+    refreshSelfControlActions();
 
     if (videoWorker || videoThread) {
         qInfo() << "[Mainwindow] 会议已启动（重复启动忽略）";
@@ -830,7 +831,33 @@ void MainWindow::setupBottomMenus()
         chat->setEnabled(false);
         auto *participants = moreMenu->addAction("成员管理（待实现）");
         participants->setEnabled(false);
+        moreMenu->addSeparator();
+        selfMicToggleAction = moreMenu->addAction("静音我自己");
+        selfCamToggleAction = moreMenu->addAction("关闭我的摄像头");
+        connect(selfMicToggleAction, &QAction::triggered, this, [this]() {
+            localAudioOn = !localAudioOn;
+            sendSignalUpdate();
+            appendRoomEvent(localAudioOn ? "你已恢复麦克风" : "你已静音自己");
+            refreshSelfControlActions();
+        });
+        connect(selfCamToggleAction, &QAction::triggered, this, [this]() {
+            localVideoOn = !localVideoOn;
+            sendSignalUpdate();
+            appendRoomEvent(localVideoOn ? "你已开启摄像头" : "你已关闭自己的摄像头");
+            refreshSelfControlActions();
+        });
         moreBtn->setMenu(moreMenu);
+    }
+    refreshSelfControlActions();
+}
+
+void MainWindow::refreshSelfControlActions()
+{
+    if (selfMicToggleAction) {
+        selfMicToggleAction->setText(localAudioOn ? "静音我自己" : "恢复我的麦克风");
+    }
+    if (selfCamToggleAction) {
+        selfCamToggleAction->setText(localVideoOn ? "关闭我的摄像头" : "开启我的摄像头");
     }
 }
 
@@ -1000,9 +1027,11 @@ void MainWindow::refreshRemoteTiles()
 
     QStringList streams = memberStates.keys();
     std::sort(streams.begin(), streams.end(), [this](const QString &a, const QString &b) {
-        const bool ah = memberStates.value(a).host;
-        const bool bh = memberStates.value(b).host;
-        if (ah != bh) return ah > bh;
+        const MemberState sa = memberStates.value(a);
+        const MemberState sb = memberStates.value(b);
+        const int ra = sa.host ? 2 : (sa.cohost ? 1 : 0);
+        const int rb = sb.host ? 2 : (sb.cohost ? 1 : 0);
+        if (ra != rb) return ra > rb;
         return a < b;
     });
 
@@ -1061,6 +1090,7 @@ void MainWindow::refreshRemoteTiles()
 
         QString name = stream;
         if (st.host) name += " [主持人]";
+        else if (st.cohost) name += " [联席主持人]";
         tile.nameLabel->setText(name);
 
         QStringList flags;
@@ -1074,6 +1104,7 @@ void MainWindow::refreshRemoteTiles()
         if (tile.cornerBadge) {
             QStringList chips;
             if (st.host) chips << chip("主", "#f59f00");
+            else if (st.cohost) chips << chip("管", "#1971c2");
             chips << chip("麦", st.audio ? "#2f9e44" : "#c92a2a");
             chips << chip("摄", st.video ? "#2f9e44" : "#c92a2a");
             if (!st.pub) chips << chip("停", "#6c757d");
@@ -1238,9 +1269,11 @@ void MainWindow::refreshRoomUserList()
 
     QStringList streams = memberStates.keys();
     std::sort(streams.begin(), streams.end(), [this](const QString &a, const QString &b) {
-        const bool ah = memberStates.value(a).host;
-        const bool bh = memberStates.value(b).host;
-        if (ah != bh) return ah > bh;
+        const MemberState sa = memberStates.value(a);
+        const MemberState sb = memberStates.value(b);
+        const int ra = sa.host ? 2 : (sa.cohost ? 1 : 0);
+        const int rb = sb.host ? 2 : (sb.cohost ? 1 : 0);
+        if (ra != rb) return ra > rb;
         return a < b;
     });
 
@@ -1267,8 +1300,9 @@ void MainWindow::refreshRoomUserList()
         drawChip(23, st.audio ? QColor("#2f9e44") : QColor("#c92a2a"), "M");
         drawChip(46, st.video ? QColor("#2f9e44") : QColor("#c92a2a"), "V");
 
-        if (st.host) {
-            p.setPen(QPen(QColor("#ffd43b"), 2));
+        if (st.host || st.cohost) {
+            const QColor roleColor = st.host ? QColor("#ffd43b") : QColor("#4dabf7");
+            p.setPen(QPen(roleColor, 2));
             p.setBrush(Qt::NoBrush);
             p.drawRoundedRect(QRect(0, 0, 65, 17), 8, 8);
         }
@@ -1282,17 +1316,20 @@ void MainWindow::refreshRoomUserList()
         const MemberState st = memberStates.value(stream);
         QString text = stream;
         if (st.host) text += "  ·  主持人";
+        else if (st.cohost) text += "  ·  联席主持人";
         else text += "  ·  成员";
         if (!st.pub) text += "  ·  未推流";
 
         auto *item = new QListWidgetItem(text, roomUserList);
         item->setData(Qt::UserRole, stream);
         item->setIcon(makeStateIcon(st));
-        item->setToolTip(QString("推流: %1\n麦克风: %2\n摄像头: %3")
+        const QString roleText = st.host ? "主持人" : (st.cohost ? "联席主持人" : "成员");
+        item->setToolTip(QString("角色: %1\n推流: %2\n麦克风: %3\n摄像头: %4")
+                             .arg(roleText)
                              .arg(st.pub ? "开启" : "关闭")
                              .arg(st.audio ? "开启" : "关闭")
                              .arg(st.video ? "开启" : "关闭"));
-        if (st.host) {
+        if (st.host || st.cohost) {
             QFont f = item->font();
             f.setBold(true);
             item->setFont(f);
@@ -1364,6 +1401,7 @@ void MainWindow::sendSignalCmd(const QString &toStream, const QString &action)
     obj["to"] = toStream;
     obj["action"] = action;
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    qInfo() << "[SignalCmd] room=" << roomId << "to=" << toStream << "action=" << action;
 }
 
 void MainWindow::onSignalConnected()
@@ -1375,6 +1413,7 @@ void MainWindow::onSignalConnected()
     }
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
     sendSignalJoin();
+    refreshSelfControlActions();
 }
 
 void MainWindow::onSignalDisconnected()
@@ -1401,6 +1440,7 @@ void MainWindow::onSignalDisconnected()
     memberStates.clear();
     roomHostStream.clear();
     refreshRoomUserList();
+    refreshSelfControlActions();
 }
 
 void MainWindow::onSignalTextMessage(const QString &msg)
@@ -1415,6 +1455,8 @@ void MainWindow::onSignalTextMessage(const QString &msg)
         const QString room = obj.value("room").toString();
         if (!roomId.isEmpty() && room != roomId) return;
 
+        const bool oldSelfHost = memberStates.value(selfStream).host;
+        const bool oldSelfCoHost = memberStates.value(selfStream).cohost;
         QHash<QString, MemberState> newStates;
         roomHostStream.clear();
 
@@ -1428,7 +1470,9 @@ void MainWindow::onSignalTextMessage(const QString &msg)
             st.audio = m.value("audio").toBool(true);
             st.video = m.value("video").toBool(true);
             st.pub = m.value("pub").toBool(false);
-            st.host = (m.value("role").toString() == "host");
+            const QString role = m.value("role").toString();
+            st.host = (role == "host");
+            st.cohost = (role == "cohost");
             if (st.stream.isEmpty()) continue;
             if (st.host) roomHostStream = st.stream;
             newStates.insert(st.stream, st);
@@ -1446,8 +1490,30 @@ void MainWindow::onSignalTextMessage(const QString &msg)
 
         if (memberStates.contains(selfStream)) {
             const MemberState selfState = memberStates.value(selfStream);
+            const bool oldAudio = localAudioOn;
+            const bool oldVideo = localVideoOn;
             localAudioOn = selfState.audio;
             localVideoOn = selfState.video;
+
+            if (oldAudio != localAudioOn) {
+                appendRoomEvent(localAudioOn ? "麦克风已恢复" : "主持人已将你静音");
+            }
+            if (oldVideo != localVideoOn) {
+                appendRoomEvent(localVideoOn ? "摄像头已开启" : "主持人已关闭你的摄像头");
+            }
+            if (!oldSelfHost && selfState.host) {
+                appendRoomEvent("你已成为主持人");
+            } else if (oldSelfHost && !selfState.host) {
+                appendRoomEvent("你的主持人身份已转移");
+            }
+            if (!oldSelfCoHost && selfState.cohost) {
+                appendRoomEvent("你已成为联席主持人");
+            } else if (oldSelfCoHost && !selfState.cohost && !selfState.host) {
+                appendRoomEvent("你的联席主持人身份已取消");
+            }
+            if (oldAudio != localAudioOn || oldVideo != localVideoOn) {
+                refreshSelfControlActions();
+            }
         }
 
         // 不在 members 刷新里主动 stopCurrentPull()，避免状态瞬时抖动触发误停拉流。
@@ -1463,11 +1529,37 @@ void MainWindow::onSignalTextMessage(const QString &msg)
         if (action == "mute_audio") {
             localAudioOn = false;
             appendRoomEvent("主持人已将你静音");
+            refreshSelfControlActions();
             return;
         }
         if (action == "mute_video") {
             localVideoOn = false;
             appendRoomEvent("主持人已关闭你的摄像头");
+            refreshSelfControlActions();
+            return;
+        }
+        if (action == "unmute_audio" || action == "restore_audio" || action == "audio_on") {
+            localAudioOn = true;
+            appendRoomEvent("主持人已恢复你的麦克风");
+            refreshSelfControlActions();
+            return;
+        }
+        if (action == "unmute_video" || action == "restore_video" || action == "video_on") {
+            localVideoOn = true;
+            appendRoomEvent("主持人已开启你的摄像头");
+            refreshSelfControlActions();
+            return;
+        }
+        if (action == "set_host") {
+            appendRoomEvent("你被设为主持人");
+            return;
+        }
+        if (action == "set_cohost") {
+            appendRoomEvent("你被设为联席主持人");
+            return;
+        }
+        if (action == "unset_cohost") {
+            appendRoomEvent("你的联席主持人身份被取消");
             return;
         }
         if (action == "kick") {
@@ -1505,28 +1597,142 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
     if (!item) return;
 
     const QString targetStream = item->data(Qt::UserRole).toString();
-    if (targetStream.isEmpty() || targetStream == selfStream) return;
-    if (!memberStates.value(selfStream).host) {
-        appendRoomEvent("仅主持人可管理成员");
+    if (targetStream.isEmpty()) return;
+    const MemberState selfState = memberStates.value(selfStream);
+    const bool selfIsHost = selfState.host;
+    const bool selfIsCoHost = selfState.cohost;
+
+    QMenu menu(this);
+    QAction *picked = nullptr;
+
+    if (targetStream == selfStream) {
+        QAction *selfAudioToggle = menu.addAction(localAudioOn ? "静音我自己" : "恢复我自己的麦克风");
+        QAction *selfVideoToggle = menu.addAction(localVideoOn ? "关闭我自己的摄像头" : "开启我自己的摄像头");
+
+        QAction *allMuteAudio = nullptr;
+        QAction *allUnmuteAudio = nullptr;
+        QAction *allMuteVideo = nullptr;
+        QAction *allUnmuteVideo = nullptr;
+
+        if (selfIsHost) {
+            menu.addSeparator();
+            allMuteAudio = menu.addAction("全体静音（不含自己）");
+            allUnmuteAudio = menu.addAction("全体恢复麦克风（不含自己）");
+            menu.addSeparator();
+            allMuteVideo = menu.addAction("全体关闭摄像头（不含自己）");
+            allUnmuteVideo = menu.addAction("全体开启摄像头（不含自己）");
+        }
+
+        picked = menu.exec(roomUserList->viewport()->mapToGlobal(pos));
+        if (!picked) return;
+
+        if (picked == selfAudioToggle) {
+            localAudioOn = !localAudioOn;
+            sendSignalUpdate();
+            appendRoomEvent(localAudioOn ? "你已恢复麦克风" : "你已静音自己");
+            refreshSelfControlActions();
+            return;
+        }
+        if (picked == selfVideoToggle) {
+            localVideoOn = !localVideoOn;
+            sendSignalUpdate();
+            appendRoomEvent(localVideoOn ? "你已开启摄像头" : "你已关闭自己的摄像头");
+            refreshSelfControlActions();
+            return;
+        }
+
+        if (!selfIsHost) return;
+
+        auto sendToAll = [this](const QString &action, const QString &eventText) {
+            int sent = 0;
+            for (auto it = memberStates.cbegin(); it != memberStates.cend(); ++it) {
+                const QString s = it.key();
+                if (s.isEmpty() || s == selfStream) continue;
+                sendSignalCmd(s, action);
+                ++sent;
+            }
+            appendRoomEvent(QString("%1，已发送 %2 人").arg(eventText).arg(sent));
+        };
+
+        if (picked == allMuteAudio) {
+            sendToAll("mute_audio", "主持人执行全体静音");
+        } else if (picked == allUnmuteAudio) {
+            sendToAll("unmute_audio", "主持人执行全体恢复麦克风");
+        } else if (picked == allMuteVideo) {
+            sendToAll("mute_video", "主持人执行全体关闭摄像头");
+        } else if (picked == allUnmuteVideo) {
+            sendToAll("unmute_video", "主持人执行全体开启摄像头");
+        }
         return;
     }
 
-    QMenu menu(this);
+    if (!(selfIsHost || selfIsCoHost)) {
+        appendRoomEvent("仅主持人/联席主持人可管理其他成员");
+        return;
+    }
+
+    const MemberState targetState = memberStates.value(targetStream);
+    if (!selfIsHost && targetState.host) {
+        appendRoomEvent("联席主持人不可管理主持人");
+        return;
+    }
+
     QAction *muteAudio = menu.addAction("静音该成员");
+    QAction *unmuteAudio = menu.addAction("恢复该成员麦克风");
+    menu.addSeparator();
     QAction *muteVideo = menu.addAction("关闭该成员摄像头");
+    QAction *unmuteVideo = menu.addAction("开启该成员摄像头");
+    menu.addSeparator();
     QAction *kick = menu.addAction("踢出该成员");
-    QAction *picked = menu.exec(roomUserList->viewport()->mapToGlobal(pos));
+
+    QAction *setCoHost = nullptr;
+    QAction *unsetCoHost = nullptr;
+    QAction *transferHost = nullptr;
+    if (selfIsHost) {
+        menu.addSeparator();
+        if (!targetState.host && !targetState.cohost) {
+            setCoHost = menu.addAction("邀请为联席主持人");
+        } else if (targetState.cohost) {
+            unsetCoHost = menu.addAction("取消联席主持人");
+        }
+        if (!targetState.host) {
+            transferHost = menu.addAction("转移主持人给该成员");
+        }
+    }
+
+    picked = menu.exec(roomUserList->viewport()->mapToGlobal(pos));
     if (!picked) return;
 
     if (picked == muteAudio) {
         sendSignalCmd(targetStream, "mute_audio");
         appendRoomEvent(QString("已对 %1 发送静音").arg(targetStream));
+    } else if (picked == unmuteAudio) {
+        sendSignalCmd(targetStream, "unmute_audio");
+        appendRoomEvent(QString("已对 %1 发送恢复麦克风").arg(targetStream));
     } else if (picked == muteVideo) {
         sendSignalCmd(targetStream, "mute_video");
         appendRoomEvent(QString("已对 %1 发送关闭摄像头").arg(targetStream));
+    } else if (picked == unmuteVideo) {
+        sendSignalCmd(targetStream, "unmute_video");
+        appendRoomEvent(QString("已对 %1 发送开启摄像头").arg(targetStream));
     } else if (picked == kick) {
         sendSignalCmd(targetStream, "kick");
         appendRoomEvent(QString("已踢出 %1").arg(targetStream));
+    } else if (picked == setCoHost) {
+        sendSignalCmd(targetStream, "set_cohost");
+        appendRoomEvent(QString("已邀请 %1 为联席主持人").arg(targetStream));
+    } else if (picked == unsetCoHost) {
+        sendSignalCmd(targetStream, "unset_cohost");
+        appendRoomEvent(QString("已取消 %1 的联席主持人身份").arg(targetStream));
+    } else if (picked == transferHost) {
+        const auto ret = QMessageBox::question(
+            this, "转移主持人",
+            QString("确认将主持人转移给 %1 ？").arg(targetStream)
+        );
+        if (ret == QMessageBox::Yes) {
+            sendSignalCmd(targetStream, "set_host");
+            appendRoomEvent(QString("已将主持人转移给 %1").arg(targetStream));
+        }
     }
 }
 
