@@ -8,7 +8,6 @@
 #include <QIODevice>
 #include <QAudioDevice>
 #include <QMediaDevices>
-#include <QAudioSink>
 #include <QCloseEvent>
 #include <QElapsedTimer>
 #include <QThread>
@@ -18,6 +17,7 @@
 #include <QListWidgetItem>
 #include <QDockWidget>
 #include <QPushButton>
+#include <QToolButton>
 #include <QPlainTextEdit>
 #include <QLabel>
 #include <QFrame>
@@ -62,10 +62,7 @@ public:
 
 private slots:
     void on_startMeetingButton_clicked();
-    void on_switchCameraButton_clicked();
     void on_captureImageButton_clicked();
-    void on_startAudioButton_clicked();
-    void on_stopAudioButton_clicked();
     void on_startRecordButton_clicked();
     void on_stopRecordButton_clicked();
 
@@ -103,6 +100,7 @@ private:
     bool ensureRoomIdentity(bool askRoomIfEmpty);
     void appendRoomEvent(const QString &text);
     void refreshRoomUserList();
+    void setupBottomMenus();
 
     void sendSignalJoin();
     void sendSignalLeave();
@@ -110,9 +108,11 @@ private:
     void sendSignalCmd(const QString &toStream, const QString &action);
 
     void setupRemoteGridUi();
+    void syncRemoteContainerGeometry();
     void refreshRemoteTiles();
     void applyTileFrame(const QString &stream, const QImage &img);
     void clearAllTileFrames();
+    void updateFocusStatusBadge();
     void syncGridPullers();
     void ensurePullSession(const QString &stream);
     void stopPullSession(const QString &stream, bool waitForQuit = true);
@@ -122,6 +122,8 @@ private:
 
     void startPullStream(const QString &stream);
     void stopCurrentPull(bool waitForQuit = true);
+    void startAudioCapture();
+    void stopAudioCapture();
 
 private:
     Ui::MainWindow *ui = nullptr;
@@ -133,10 +135,6 @@ private:
     QThread *audioThread = nullptr;
     AudioCapture *audioWorker = nullptr;
 
-    QAudioSink *audioSink = nullptr;
-    QIODevice *audioOutput = nullptr;
-    SwrContext *playSwrCtx = nullptr;
-    QAudioFormat playFormat;
     QMetaObject::Connection recordConn;
     QMetaObject::Connection audioSendConn;
     QMetaObject::Connection videoSendConn;
@@ -168,7 +166,6 @@ private:
 
     bool audioStopped = false;
     bool meetingStopped = false;
-    bool audioPlayEnabled = false;
 
     QWebSocket *signalSocket = nullptr;
     bool signalConnected = false;
@@ -199,12 +196,15 @@ private:
         QLabel *videoLabel = nullptr;
         QLabel *nameLabel = nullptr;
         QLabel *stateLabel = nullptr;
+        QLabel *cornerBadge = nullptr;
         QString stream;
         bool hasFrame = false;
     };
     QWidget *remoteContainer = nullptr;
     QWidget *remoteGridPage = nullptr;
     QStackedLayout *remoteStack = nullptr;
+    QGridLayout *remoteGridLayout = nullptr;
+    QLabel *focusStatusLabel = nullptr;
     QVector<RemoteTile> remoteTiles;
     QHash<QString, int> streamToTile;
     QString focusedStream;

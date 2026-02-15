@@ -6,217 +6,457 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1087</width>
-    <height>668</height>
+    <width>1285</width>
+    <height>764</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QLabel" name="remoteVideolabel">
-    <property name="geometry">
-     <rect>
-      <x>130</x>
-      <y>60</y>
-      <width>391</width>
-      <height>331</height>
-     </rect>
+   <layout class="QVBoxLayout" name="mainVerticalLayout">
+    <property name="spacing">
+     <number>8</number>
     </property>
-    <property name="text">
-     <string>远端画面</string>
+    <property name="leftMargin">
+     <number>10</number>
     </property>
-    <property name="alignment">
-     <set>Qt::AlignmentFlag::AlignCenter</set>
+    <property name="topMargin">
+     <number>10</number>
     </property>
-   </widget>
-   <widget class="QLabel" name="localVideolabel">
-    <property name="geometry">
-     <rect>
-      <x>650</x>
-      <y>50</y>
-      <width>320</width>
-      <height>240</height>
-     </rect>
+    <property name="rightMargin">
+     <number>10</number>
     </property>
-    <property name="minimumSize">
-     <size>
-      <width>320</width>
-      <height>240</height>
-     </size>
+    <property name="bottomMargin">
+     <number>10</number>
     </property>
-    <property name="text">
-     <string>本地画面</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignmentFlag::AlignCenter</set>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="startMeetingButton">
-    <property name="geometry">
-     <rect>
-      <x>610</x>
-      <y>330</y>
-      <width>93</width>
-      <height>28</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>开始会议</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="captureImageButton">
-    <property name="geometry">
-     <rect>
-      <x>750</x>
-      <y>320</y>
-      <width>93</width>
-      <height>28</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>拍照</string>
-    </property>
-   </widget>
-   <widget class="QComboBox" name="cameraDevicecomboBox">
-    <property name="geometry">
-     <rect>
-      <x>80</x>
-      <y>430</y>
-      <width>161</width>
-      <height>31</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="switchCameraButton">
-    <property name="geometry">
-     <rect>
-      <x>250</x>
-      <y>430</y>
-      <width>93</width>
-      <height>28</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>切换摄像头</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="startAudioButton">
-    <property name="geometry">
-     <rect>
-      <x>600</x>
-      <y>370</y>
-      <width>101</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>开始音频采集</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="stopAudioButton">
-    <property name="geometry">
-     <rect>
-      <x>930</x>
-      <y>380</y>
-      <width>111</width>
-      <height>41</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>停止音频采集</string>
-    </property>
-   </widget>
-   <widget class="QCheckBox" name="enableAudioSavecheckBox">
-    <property name="geometry">
-     <rect>
-      <x>600</x>
-      <y>450</y>
-      <width>98</width>
-      <height>23</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>保存音频</string>
-    </property>
-   </widget>
-   <widget class="QCheckBox" name="enableAudioPlaycheckBox">
-    <property name="geometry">
-     <rect>
-      <x>600</x>
-      <y>420</y>
-      <width>98</width>
-      <height>23</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>播放音频</string>
-    </property>
-   </widget>
-   <widget class="QComboBox" name="audioDevicecomboBox">
-    <property name="geometry">
-     <rect>
-      <x>720</x>
-      <y>380</y>
-      <width>191</width>
-      <height>31</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="startRecordButton">
-    <property name="geometry">
-     <rect>
-      <x>440</x>
-      <y>500</y>
-      <width>93</width>
-      <height>28</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>开始录像</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="stopRecordButton">
-    <property name="geometry">
-     <rect>
-      <x>550</x>
-      <y>500</y>
-      <width>93</width>
-      <height>28</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>停止录像</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="startReceiveButton">
-    <property name="geometry">
-     <rect>
-      <x>270</x>
-      <y>510</y>
-      <width>121</width>
-      <height>28</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>连接信令</string>
-    </property>
-   </widget>
-   <widget class="QPushButton" name="stopMeetingButton">
-    <property name="geometry">
-     <rect>
-      <x>880</x>
-      <y>330</y>
-      <width>93</width>
-      <height>28</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>结束会议</string>
-    </property>
-   </widget>
+    <item>
+     <widget class="QFrame" name="topBarFrame">
+      <property name="styleSheet">
+       <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
+QLabel#meetingTitleLabel{color:#f5f7fb;font-size:16px;font-weight:700;}
+QLabel#meetingCodeLabel,QLabel#signalBadgeLabel{color:#d5deed;background:#2a3140;padding:4px 8px;border-radius:6px;}</string>
+      </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <layout class="QHBoxLayout" name="topBarLayout">
+       <property name="leftMargin">
+        <number>12</number>
+       </property>
+       <property name="topMargin">
+        <number>8</number>
+       </property>
+       <property name="rightMargin">
+        <number>12</number>
+       </property>
+       <property name="bottomMargin">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="meetingTitleLabel">
+         <property name="text">
+          <string>SmartMeet 在线会议</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="topSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="meetingCodeLabel">
+         <property name="text">
+          <string>房间: --</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="signalBadgeLabel">
+         <property name="text">
+          <string>信令状态</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="contentLayout">
+      <property name="spacing">
+       <number>10</number>
+      </property>
+      <item>
+       <widget class="QFrame" name="remoteStageFrame">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>4</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QFrame#remoteStageFrame{background:#0f141d;border:1px solid #293243;border-radius:10px;}</string>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::Shape::StyledPanel</enum>
+        </property>
+        <layout class="QVBoxLayout" name="remoteStageLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="remoteVideolabel">
+           <property name="minimumSize">
+            <size>
+             <width>640</width>
+             <height>420</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">QLabel{background:#05070b;color:#9aa7bd;border-radius:8px;}</string>
+           </property>
+           <property name="text">
+            <string>远端会场画面</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignmentFlag::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QFrame" name="localSideFrame">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+          <horstretch>2</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>300</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="styleSheet">
+         <string notr="true">QFrame#localSideFrame{background:#171c27;border:1px solid #2b3343;border-radius:10px;}
+QLabel{color:#d7dff0;}
+QFrame#localHintFrame{background:#1d2432;border:1px solid #2f394b;border-radius:8px;}
+QLabel#localHintTitle{font-weight:700;color:#eef4ff;}
+QLabel#localHintBody{color:#aeb8cb;}</string>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::Shape::StyledPanel</enum>
+        </property>
+        <layout class="QVBoxLayout" name="localSideLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="localVideolabel">
+           <property name="minimumSize">
+            <size>
+             <width>280</width>
+             <height>180</height>
+            </size>
+           </property>
+           <property name="styleSheet">
+            <string notr="true">QLabel{background:#070b12;color:#9aa7bd;border-radius:8px;}</string>
+           </property>
+           <property name="text">
+            <string>本地预览</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignmentFlag::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QFrame" name="localHintFrame">
+           <property name="frameShape">
+            <enum>QFrame::Shape::StyledPanel</enum>
+           </property>
+           <layout class="QVBoxLayout" name="localHintLayout">
+            <property name="leftMargin">
+             <number>8</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>8</number>
+            </property>
+            <property name="bottomMargin">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="localHintTitle">
+              <property name="text">
+               <string>会议状态</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="localHintBody">
+              <property name="text">
+               <string>双击成员卡片可聚焦放大；右侧成员列表可执行主持人控制。</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <spacer name="localSideBottomSpacer">
+           <property name="orientation">
+            <enum>Qt::Orientation::Vertical</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>40</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QFrame" name="bottomControlFrame">
+       <property name="styleSheet">
+        <string notr="true">QFrame#bottomControlFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
+QPushButton,QToolButton{background:#2f3b52;color:#eef3ff;border:1px solid #465778;border-radius:6px;padding:6px 14px;font-weight:600;min-height:28px;}
+QPushButton:hover,QToolButton:hover{background:#394661;}
+QPushButton#startReceiveButton{background:#3a4963;border-color:#536788;}
+QPushButton#startMeetingButton{background:#2e86de;border-color:#4b9aea;}
+QPushButton#stopMeetingButton{background:#d64545;border-color:#e86b6b;}
+QPushButton#startRecordButton{background:#2f6f45;border-color:#4e9366;}
+QPushButton#stopRecordButton{background:#5c3b3b;border-color:#7e5353;}
+QToolButton::menu-indicator{image:none;}
+QFrame#ctrlSep1,QFrame#ctrlSep2{background:#3a4253;max-width:1px;min-width:1px;}
+QFrame#deviceEdgeFrame{background:#1a2230;border:1px solid #334055;border-radius:6px;}
+QComboBox{background:#232c3d;color:#e2e9f8;border:1px solid #425170;border-radius:4px;padding:3px 6px;min-height:24px;}
+QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
+       </property>
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
+      <layout class="QHBoxLayout" name="bottomControlLayout">
+       <property name="leftMargin">
+        <number>10</number>
+       </property>
+       <property name="topMargin">
+        <number>8</number>
+       </property>
+       <property name="rightMargin">
+        <number>10</number>
+       </property>
+       <property name="bottomMargin">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QPushButton" name="startReceiveButton">
+         <property name="text">
+          <string>连接信令</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="ctrlSep1">
+         <property name="frameShape">
+          <enum>QFrame::Shape::VLine</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Shadow::Plain</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="startMeetingButton">
+         <property name="text">
+          <string>开始会议</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="stopMeetingButton">
+         <property name="text">
+          <string>结束会议</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="ctrlSep2">
+         <property name="frameShape">
+          <enum>QFrame::Shape::VLine</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Shadow::Plain</enum>
+         </property>
+        </widget>
+       </item>
+        <item>
+         <widget class="QPushButton" name="captureImageButton">
+         <property name="text">
+          <string>拍照</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="startRecordButton">
+         <property name="text">
+          <string>开始AV录制</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="stopRecordButton">
+         <property name="text">
+          <string>停止AV录制</string>
+         </property>
+        </widget>
+        </item>
+        <item>
+         <widget class="QToolButton" name="beautyMenuButton">
+          <property name="text">
+           <string>美颜</string>
+          </property>
+          <property name="popupMode">
+           <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QToolButton" name="moreMenuButton">
+          <property name="text">
+           <string>更多</string>
+          </property>
+          <property name="popupMode">
+           <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="bottomSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+        <item>
+         <widget class="QFrame" name="deviceEdgeFrame">
+          <property name="frameShape">
+           <enum>QFrame::Shape::StyledPanel</enum>
+          </property>
+          <layout class="QHBoxLayout" name="deviceEdgeLayout">
+           <property name="leftMargin">
+            <number>8</number>
+           </property>
+           <property name="topMargin">
+            <number>5</number>
+           </property>
+           <property name="rightMargin">
+            <number>8</number>
+           </property>
+           <property name="bottomMargin">
+            <number>5</number>
+           </property>
+           <property name="spacing">
+            <number>6</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="deviceEdgeTitle">
+             <property name="text">
+              <string>设备</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="cameraDevicecomboBox">
+             <property name="minimumSize">
+              <size>
+               <width>120</width>
+               <height>0</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="audioDevicecomboBox">
+             <property name="minimumSize">
+              <size>
+               <width>120</width>
+               <height>0</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+    </item>
+   </layout>
   </widget>
   <widget class="QDockWidget" name="roomDock">
+   <property name="minimumSize">
+    <size>
+     <width>280</width>
+     <height>260</height>
+    </size>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QDockWidget{font-size:13px;}
+QListWidget#roomUserList{background:#111722;border:1px solid #2f394d;border-radius:6px;color:#e6edf8;outline:none;}
+QListWidget#roomUserList::item{padding:6px 6px;}
+QListWidget#roomUserList::item:selected{background:#2b3850;border:1px solid #48608a;border-radius:4px;}
+QTabWidget::pane{border:1px solid #2f394d;border-radius:6px;background:#1a2230;}
+QTabBar::tab{background:#263146;color:#ced8eb;padding:6px 12px;border-top-left-radius:4px;border-top-right-radius:4px;}
+QTabBar::tab:selected{background:#334260;color:#f3f7ff;}
+QPlainTextEdit#roomEventLog{background:#111722;border:1px solid #2f394d;border-radius:6px;color:#d6deef;}</string>
+   </property>
    <property name="windowTitle">
     <string>房间成员</string>
    </property>
@@ -241,30 +481,113 @@
       <number>8</number>
      </property>
      <item>
-      <widget class="QLabel" name="signalStateLabel">
-       <property name="text">
-        <string>信令: 未连接</string>
+      <widget class="QFrame" name="roomHeaderFrame">
+       <property name="styleSheet">
+        <string notr="true">QFrame#roomHeaderFrame{background:#222a38;border:1px solid #303a4d;border-radius:6px;}
+QLabel{color:#dce5f8;font-weight:600;}</string>
        </property>
+       <property name="frameShape">
+        <enum>QFrame::Shape::StyledPanel</enum>
+       </property>
+       <layout class="QHBoxLayout" name="roomHeaderLayout">
+        <property name="leftMargin">
+         <number>8</number>
+        </property>
+        <property name="topMargin">
+         <number>6</number>
+        </property>
+        <property name="rightMargin">
+         <number>8</number>
+        </property>
+        <property name="bottomMargin">
+         <number>6</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="signalStateLabel">
+          <property name="text">
+           <string>信令: 未连接</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="roomHeaderSpacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QLabel" name="roomCountLabel">
+          <property name="text">
+           <string>在线: 0</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </item>
      <item>
-      <widget class="QLabel" name="roomCountLabel">
-       <property name="text">
-        <string>在线: 0</string>
+      <widget class="QTabWidget" name="roomTabWidget">
+       <property name="currentIndex">
+        <number>0</number>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QListWidget" name="roomUserList"/>
-     </item>
-     <item>
-      <widget class="QPlainTextEdit" name="roomEventLog">
-       <property name="readOnly">
-        <bool>true</bool>
-       </property>
-       <property name="placeholderText">
-        <string>会议事件日志</string>
-       </property>
+       <widget class="QWidget" name="memberTab">
+        <attribute name="title">
+         <string>成员</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="memberTabLayout">
+         <property name="leftMargin">
+          <number>4</number>
+         </property>
+         <property name="topMargin">
+          <number>4</number>
+         </property>
+         <property name="rightMargin">
+          <number>4</number>
+         </property>
+         <property name="bottomMargin">
+          <number>4</number>
+         </property>
+         <item>
+          <widget class="QListWidget" name="roomUserList"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="eventTab">
+        <attribute name="title">
+         <string>事件</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="eventTabLayout">
+         <property name="leftMargin">
+          <number>4</number>
+         </property>
+         <property name="topMargin">
+          <number>4</number>
+         </property>
+         <property name="rightMargin">
+          <number>4</number>
+         </property>
+         <property name="bottomMargin">
+          <number>4</number>
+         </property>
+         <item>
+          <widget class="QPlainTextEdit" name="roomEventLog">
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+           <property name="placeholderText">
+            <string>会议事件日志</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
       </widget>
      </item>
     </layout>
@@ -275,7 +598,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1087</width>
+     <width>1285</width>
      <height>25</height>
     </rect>
    </property>

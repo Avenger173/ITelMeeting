@@ -22,8 +22,8 @@
 #include <QLineEdit>
 #include <QUrl>
 #include <QMouseEvent>
+#include <QToolButton>
 #include <algorithm>
-#include <libswresample/swresample.h>
 
 namespace {
 static bool stopThreadAndDelete(QThread *&thr, const char *tag, int quitWaitMs = 3000) {
@@ -78,6 +78,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     setupSignalUi();
+    setupBottomMenus();
     setupRemoteGridUi();
     refreshRemoteTiles();
 }
@@ -92,10 +93,6 @@ MainWindow::~MainWindow()
         signalSocket=nullptr;
     }
 
-    if (playSwrCtx) {
-        swr_free(&playSwrCtx);
-        playSwrCtx = nullptr;
-    }
     auto tmp=ui;
     ui=nullptr;
     delete tmp;
@@ -148,7 +145,11 @@ void MainWindow::on_startMeetingButton_clicked()
             }
         }, Qt::QueuedConnection);
 
-        if (!videoWorker->open(0)) {
+        int camIndex = 0;
+        if (ui && ui->cameraDevicecomboBox) {
+            camIndex = ui->cameraDevicecomboBox->currentData().toInt();
+        }
+        if (!videoWorker->open(camIndex)) {
             QMessageBox::warning(this, "错误", "无法打开摄像头");
             videoWorker->deleteLater();
             videoWorker = nullptr;
@@ -193,9 +194,7 @@ void MainWindow::on_startMeetingButton_clicked()
         connect(audioEncThread, &QThread::finished, audioEnc, &QObject::deleteLater, Qt::UniqueConnection);
     }
 
-    if (!audioWorker) {
-        on_startAudioButton_clicked();
-    }
+    if (!audioWorker) startAudioCapture();
 
     bool aok = false;
     QMetaObject::invokeMethod(audioEnc, [&]() {
@@ -299,7 +298,7 @@ void MainWindow::on_stopMeetingButton_clicked()
 
     if (receiver) disconnect(receiver, nullptr, this, nullptr);
 
-    on_stopAudioButton_clicked();
+    stopAudioCapture();
     qInfo() << "[Mainwindow] stop audio done";
 
     if (receiver) {
@@ -390,16 +389,6 @@ void MainWindow::on_stopMeetingButton_clicked()
     stopMeetingInProgress = false;
 }
 
-void MainWindow::on_switchCameraButton_clicked()
-{
-    if (!videoWorker) return;
-
-    int index = ui->cameraDevicecomboBox->currentIndex();
-    if (!videoWorker->reopen(index)) {
-        QMessageBox::warning(this, "错误", "切换摄像头失败");
-    }
-}
-
 void MainWindow::on_captureImageButton_clicked()
 {
     if (videoWorker) {
@@ -411,7 +400,7 @@ void MainWindow::on_captureImageButton_clicked()
 
 
 
-void MainWindow::on_startAudioButton_clicked()
+void MainWindow::startAudioCapture()
 {
     if (!audioWorker) {
         audioWorker = new AudioCapture;
@@ -425,24 +414,17 @@ void MainWindow::on_startAudioButton_clicked()
             qDebug() << "AudioLog:" << msg;
         });
 
-        QString device = "audio=" + ui->audioDevicecomboBox->currentText();
+        const QString selectedMic = (ui && ui->audioDevicecomboBox) ? ui->audioDevicecomboBox->currentText() : QString();
+        QString device = "audio=" + selectedMic;
         qDebug() << "FFmpeg 采集设备名:" << device;
-        bool save = ui->enableAudioSavecheckBox->isChecked();
-        bool play = ui->enableAudioPlaycheckBox->isChecked();
-        audioPlayEnabled = play;
 
-        // 采集端参数固定: 44100 Hz / 单声道 / Int16
-        QAudioDevice dev = QMediaDevices::defaultAudioOutput();
+        // 采集端参数固定: 44100 Hz / 单声道 / Int16 (仅采集，不本地播放)
         QAudioFormat fmt;
         fmt.setSampleRate(44100);
         fmt.setChannelCount(1);
         fmt.setSampleFormat(QAudioFormat::Int16);
-        if (!dev.isFormatSupported(fmt)) {
-            qDebug() << "播放设备不支持 44100 单声道 Int16，使用推荐格式";
-            fmt = dev.preferredFormat();
-        }
 
-        if (!audioWorker->startCapture(device, save, play, fmt)) {
+        if (!audioWorker->startCapture(device, false, false, fmt)) {
             QMessageBox::warning(this, "错误", "音频采集启动失败");
             return;
         }
@@ -462,83 +444,13 @@ void MainWindow::on_startAudioButton_clicked()
                     int nb_samples=data.size()/2;//S16 mono
                     self->recorder->pushAudioPCM(reinterpret_cast<const uint8_t*>(data.constData()),nb_samples);
                 }
-                if(self->audioPlayEnabled){
-                    if (!self->audioSink) {
-                        QAudioDevice dev = QMediaDevices::defaultAudioOutput();
-                        self->playFormat = dev.preferredFormat();
-                        self->audioSink = new QAudioSink(dev, self->playFormat, self.data());
-                        self->audioOutput = self->audioSink->start();
-
-                        // 初始化 swrCtx (FFmpeg 7.x API)
-                        if (self->playSwrCtx) {
-                            swr_free(&self->playSwrCtx);
-                        }
-                        AVSampleFormat outFmt = AV_SAMPLE_FMT_S16;
-                        if (self->playFormat.sampleFormat() == QAudioFormat::Int16) outFmt = AV_SAMPLE_FMT_S16;
-                        else if (self->playFormat.sampleFormat() == QAudioFormat::Float) outFmt = AV_SAMPLE_FMT_FLT;
-                        else if (self->playFormat.sampleFormat() == QAudioFormat::UInt8) outFmt = AV_SAMPLE_FMT_U8;
-
-                        AVChannelLayout outLayout, inLayout;
-                        av_channel_layout_default(&outLayout, self->playFormat.channelCount());
-                        av_channel_layout_default(&inLayout, 1); // 采集端单声道
-
-                        self->playSwrCtx = swr_alloc();
-                        swr_alloc_set_opts2(
-                            &self->playSwrCtx,
-                            &outLayout,
-                            outFmt,
-                            self->playFormat.sampleRate(),
-                            &inLayout,
-                            AV_SAMPLE_FMT_S16,
-                            44100,
-                            0, nullptr
-                            );
-                        swr_init(self->playSwrCtx);
-
-                        // 释放临时 layout
-                        av_channel_layout_uninit(&outLayout);
-                        av_channel_layout_uninit(&inLayout);
-                    }
-                    // 只对播放做格式转换，采集和保存流程不受影响
-                    if (self->audioOutput && self->playSwrCtx) {
-                        // 输入参数
-                        const uint8_t* inData[1] = { reinterpret_cast<const uint8_t*>(data.constData()) };
-                        int inSamples = data.size() / 2; // Int16 单声道
-
-                        // 计算输出缓冲区大小
-                        int outSamples = av_rescale_rnd(
-                            swr_get_delay(self->playSwrCtx, 44100) + inSamples,
-                            self->playFormat.sampleRate(),
-                            44100,
-                            AV_ROUND_UP
-                            );
-                        int outChannels = self->playFormat.channelCount();
-                        int outBytesPerSample = self->playFormat.sampleFormat() == QAudioFormat::Int16 ? 2 :
-                                                    self->playFormat.sampleFormat() == QAudioFormat::Float ? 4 :
-                                                    self->playFormat.sampleFormat() == QAudioFormat::UInt8 ? 1 : 2;
-                        int outBufSize = outSamples * outChannels * outBytesPerSample;
-                        QByteArray outBuf(outBufSize, 0);
-                        uint8_t* outData[2] = { reinterpret_cast<uint8_t*>(outBuf.data()), nullptr };
-
-                        // 转换
-                        int converted = swr_convert(
-                            self->playSwrCtx,
-                            outData, outSamples,
-                            inData, inSamples
-                            );
-                        if (converted > 0) {
-                            int bytesWritten = converted * outChannels * outBytesPerSample;
-                            self->audioOutput->write(outBuf.constData(), bytesWritten);
-                        }
-                    }
-                }
 
             },
             Qt::QueuedConnection
             );
 }
 
-void MainWindow::on_stopAudioButton_clicked()
+void MainWindow::stopAudioCapture()
 {
 
     // 如果已经停过一次，直接返回，避免重复释放
@@ -555,17 +467,6 @@ void MainWindow::on_stopAudioButton_clicked()
     }
     stopThreadAndDelete(audioThread, "audioThread", 5000);
     audioWorker = nullptr;
-
-    if (audioSink) {
-        audioSink->stop();
-        delete audioSink;
-        audioSink = nullptr;
-        audioOutput = nullptr;
-    }
-    if (playSwrCtx) {
-        swr_free(&playSwrCtx);
-        playSwrCtx = nullptr;
-    }
 
     qDebug()<<"[Mainwindow] 音频采集已停止";
 }
@@ -841,6 +742,9 @@ void MainWindow::on_startReceiveButton_clicked()
     }
 
     if (signalStateLabel) signalStateLabel->setText("信令: 连接中");
+    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
+        signalBadgeLabel->setText("信令连接中");
+    }
     appendRoomEvent(QString("连接信令服务器: %1").arg(signalUrl));
     signalSocket->open(QUrl(signalUrl));
     qInfo() << "[Mainwindow] 接收端已启动(信令)";
@@ -898,8 +802,58 @@ void MainWindow::setupSignalUi()
     connect(roomUserList, &QListWidget::customContextMenuRequested, this, &MainWindow::onRoomListContextMenu, Qt::UniqueConnection);
 }
 
+void MainWindow::setupBottomMenus()
+{
+    auto *beautyBtn = findChild<QToolButton*>("beautyMenuButton");
+    if (beautyBtn && !beautyBtn->menu()) {
+        auto *beautyMenu = new QMenu(beautyBtn);
+        auto *natural = beautyMenu->addAction("自然");
+        natural->setEnabled(false);
+        auto *clear = beautyMenu->addAction("清晰");
+        clear->setEnabled(false);
+        auto *soft = beautyMenu->addAction("柔和");
+        soft->setEnabled(false);
+        beautyMenu->addSeparator();
+        auto *tone = beautyMenu->addAction("肤色调节（待实现）");
+        tone->setEnabled(false);
+        beautyBtn->setMenu(beautyMenu);
+    }
+
+    auto *moreBtn = findChild<QToolButton*>("moreMenuButton");
+    if (moreBtn && !moreBtn->menu()) {
+        auto *moreMenu = new QMenu(moreBtn);
+        auto *share = moreMenu->addAction("屏幕共享（待实现）");
+        share->setEnabled(false);
+        auto *whiteboard = moreMenu->addAction("协作白板（待实现）");
+        whiteboard->setEnabled(false);
+        auto *chat = moreMenu->addAction("聊天面板（待实现）");
+        chat->setEnabled(false);
+        auto *participants = moreMenu->addAction("成员管理（待实现）");
+        participants->setEnabled(false);
+        moreBtn->setMenu(moreMenu);
+    }
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched && watched->objectName() == "remoteStageFrame" &&
+        (event->type() == QEvent::Resize || event->type() == QEvent::Move || event->type() == QEvent::Show)) {
+        syncRemoteContainerGeometry();
+    }
+
+    if (event->type() == QEvent::Resize || event->type() == QEvent::Show) {
+        bool ok = false;
+        const int idx = watched->property("tileIndex").toInt(&ok);
+        if (ok && idx >= 0 && idx < remoteTiles.size()) {
+            auto &tile = remoteTiles[idx];
+            if (tile.cornerBadge && tile.frame) {
+                tile.cornerBadge->adjustSize();
+                tile.cornerBadge->move(tile.frame->width() - tile.cornerBadge->width() - 8, 8);
+                tile.cornerBadge->raise();
+            }
+        }
+    }
+
     if (event->type() == QEvent::MouseButtonDblClick) {
         bool ok = false;
         const int idx = watched->property("tileIndex").toInt(&ok);
@@ -946,24 +900,28 @@ void MainWindow::setupRemoteGridUi()
     if (!ui || !ui->centralwidget || !ui->remoteVideolabel) return;
     if (remoteContainer || remoteStack) return;
 
-    remoteContainer = new QWidget(ui->centralwidget);
+    QWidget *hostParent = findChild<QWidget*>("remoteStageFrame");
+    if (!hostParent) hostParent = ui->centralwidget;
+    remoteContainer = new QWidget(hostParent);
     remoteContainer->setObjectName("remoteContainer");
-    remoteContainer->setGeometry(ui->remoteVideolabel->geometry());
+    syncRemoteContainerGeometry();
 
     remoteStack = new QStackedLayout(remoteContainer);
     remoteStack->setContentsMargins(0, 0, 0, 0);
     remoteStack->setSpacing(0);
 
     remoteGridPage = new QWidget(remoteContainer);
-    auto *grid = new QGridLayout(remoteGridPage);
-    grid->setContentsMargins(2, 2, 2, 2);
-    grid->setHorizontalSpacing(6);
-    grid->setVerticalSpacing(6);
+    remoteGridLayout = new QGridLayout(remoteGridPage);
+    remoteGridLayout->setContentsMargins(2, 2, 2, 2);
+    remoteGridLayout->setHorizontalSpacing(6);
+    remoteGridLayout->setVerticalSpacing(6);
 
+    constexpr int kTileCount = 9;   // 3x3 宫格，满足 2~6 人并预留扩展
+    constexpr int kTileColumns = 3;
     remoteTiles.clear();
-    remoteTiles.reserve(4);
+    remoteTiles.reserve(kTileCount);
 
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < kTileCount; ++i) {
         RemoteTile tile;
         tile.frame = new QFrame(remoteGridPage);
         tile.frame->setFrameShape(QFrame::StyledPanel);
@@ -982,6 +940,12 @@ void MainWindow::setupRemoteGridUi()
         tile.videoLabel->setProperty("tileIndex", i);
         tile.videoLabel->installEventFilter(this);
 
+        tile.cornerBadge = new QLabel(tile.frame);
+        tile.cornerBadge->setTextFormat(Qt::RichText);
+        tile.cornerBadge->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        tile.cornerBadge->setStyleSheet("QLabel{background:transparent;color:#f0f4ff;font-size:11px;}");
+        tile.cornerBadge->hide();
+
         tile.nameLabel = new QLabel("", tile.frame);
         tile.nameLabel->setStyleSheet("QLabel{color:#f0f0f0;font-weight:600;}");
         tile.stateLabel = new QLabel("", tile.frame);
@@ -990,7 +954,7 @@ void MainWindow::setupRemoteGridUi()
         vbox->addWidget(tile.videoLabel, 1);
         vbox->addWidget(tile.nameLabel);
         vbox->addWidget(tile.stateLabel);
-        grid->addWidget(tile.frame, i / 2, i % 2);
+        remoteGridLayout->addWidget(tile.frame, i / kTileColumns, i % kTileColumns);
 
         remoteTiles.push_back(tile);
     }
@@ -1003,7 +967,31 @@ void MainWindow::setupRemoteGridUi()
     remoteStack->addWidget(remoteGridPage);
     remoteStack->addWidget(ui->remoteVideolabel);
     remoteStack->setCurrentWidget(remoteGridPage);
+
+    focusStatusLabel = new QLabel(remoteContainer);
+    focusStatusLabel->setObjectName("focusStatusLabel");
+    focusStatusLabel->setStyleSheet("QLabel{background:rgba(0,0,0,160);color:#f0f0f0;padding:4px 8px;border-radius:4px;font-weight:600;}");
+    focusStatusLabel->move(10, 10);
+    focusStatusLabel->hide();
+    focusStatusLabel->raise();
+
+    hostParent->installEventFilter(this);
     remoteContainer->show();
+}
+
+void MainWindow::syncRemoteContainerGeometry()
+{
+    if (!remoteContainer || !ui) return;
+    QWidget *stage = findChild<QWidget*>("remoteStageFrame");
+    if (!stage) {
+        stage = ui->centralwidget;
+    }
+    if (remoteContainer->parentWidget() != stage) {
+        remoteContainer->setParent(stage);
+    }
+    const QRect full = stage->rect();
+    remoteContainer->setGeometry(full.adjusted(8, 8, -8, -8));
+    remoteContainer->raise();
 }
 
 void MainWindow::refreshRemoteTiles()
@@ -1018,6 +1006,37 @@ void MainWindow::refreshRemoteTiles()
         return a < b;
     });
 
+    int displayCount = qMin(streams.size(), remoteTiles.size());
+    int columns = 3;
+    if (displayCount <= 1) columns = 1;
+    else if (displayCount <= 4) columns = 2;
+    const int rows = qMax(1, (displayCount + columns - 1) / columns);
+
+    if (remoteGridLayout) {
+        while (QLayoutItem *item = remoteGridLayout->takeAt(0)) {
+            (void)item;
+        }
+        for (int i = 0; i < remoteTiles.size(); ++i) {
+            auto &tile = remoteTiles[i];
+            if (!tile.frame) continue;
+
+            if (i < displayCount) {
+                const int row = i / columns;
+                const int col = i % columns;
+                remoteGridLayout->addWidget(tile.frame, row, col);
+                tile.frame->show();
+            } else {
+                tile.frame->hide();
+            }
+        }
+        for (int c = 0; c < 3; ++c) {
+            remoteGridLayout->setColumnStretch(c, c < columns ? 1 : 0);
+        }
+        for (int r = 0; r < 3; ++r) {
+            remoteGridLayout->setRowStretch(r, r < rows ? 1 : 0);
+        }
+    }
+
     streamToTile.clear();
     for (int i = 0; i < remoteTiles.size(); ++i) {
         auto &tile = remoteTiles[i];
@@ -1030,6 +1049,7 @@ void MainWindow::refreshRemoteTiles()
             tile.videoLabel->setText("空席位");
             tile.nameLabel->clear();
             tile.stateLabel->clear();
+            if (tile.cornerBadge) tile.cornerBadge->hide();
             tile.frame->setStyleSheet("QFrame{background:#101010;border:1px solid #4a4a4a;border-radius:6px;}");
             continue;
         }
@@ -1045,9 +1065,24 @@ void MainWindow::refreshRemoteTiles()
 
         QStringList flags;
         if (!st.pub) flags << "未推流";
-        if (!st.audio) flags << "麦关";
-        if (!st.video) flags << "摄关";
-        tile.stateLabel->setText(flags.join(" | "));
+        tile.stateLabel->setText(flags.isEmpty() ? "双击聚焦" : flags.join(" | "));
+
+        auto chip = [](const QString &txt, const QString &bg) {
+            return QString("<span style=\"background:%1;color:#ffffff;padding:1px 5px;border-radius:7px;\">%2</span>")
+                .arg(bg, txt);
+        };
+        if (tile.cornerBadge) {
+            QStringList chips;
+            if (st.host) chips << chip("主", "#f59f00");
+            chips << chip("麦", st.audio ? "#2f9e44" : "#c92a2a");
+            chips << chip("摄", st.video ? "#2f9e44" : "#c92a2a");
+            if (!st.pub) chips << chip("停", "#6c757d");
+            tile.cornerBadge->setText(chips.join(" "));
+            tile.cornerBadge->adjustSize();
+            tile.cornerBadge->move(tile.frame->width() - tile.cornerBadge->width() - 8, 8);
+            tile.cornerBadge->show();
+            tile.cornerBadge->raise();
+        }
 
         if (oldStream != stream) {
             tile.hasFrame = false;
@@ -1066,6 +1101,8 @@ void MainWindow::refreshRemoteTiles()
             tile.frame->setStyleSheet("QFrame{background:#101010;border:1px solid #4a4a4a;border-radius:6px;}");
         }
     }
+
+    updateFocusStatusBadge();
 
     if (remoteStack) {
         if (focusMode && ui && ui->remoteVideolabel) {
@@ -1105,7 +1142,35 @@ void MainWindow::clearAllTileFrames()
                 tile.videoLabel->setText(st.pub ? "双击聚焦并拉流" : "未推流");
             }
         }
+        if (tile.cornerBadge) {
+            if (tile.stream.isEmpty()) tile.cornerBadge->hide();
+            else tile.cornerBadge->show();
+        }
     }
+    updateFocusStatusBadge();
+}
+
+void MainWindow::updateFocusStatusBadge()
+{
+    if (!focusStatusLabel) return;
+
+    if (!focusMode || focusedStream.isEmpty()) {
+        focusStatusLabel->hide();
+        return;
+    }
+
+    const MemberState st = memberStates.value(focusedStream);
+    QStringList flags;
+    flags << QString("焦点: %1").arg(focusedStream);
+    flags << (st.audio ? "麦克风开" : "麦克风关");
+    flags << (st.video ? "摄像头开" : "摄像头关");
+    if (!st.pub) flags << "未推流";
+
+    focusStatusLabel->setText(flags.join("  |  "));
+    focusStatusLabel->adjustSize();
+    focusStatusLabel->move(10, 10);
+    focusStatusLabel->show();
+    focusStatusLabel->raise();
 }
 
 bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
@@ -1128,6 +1193,9 @@ bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
         userId = QString("u%1").arg(QRandomGenerator::global()->bounded(1000, 9999));
     }
     selfStream = QString("%1_%2").arg(roomId, userId);
+    if (auto *meetingCodeLabel = findChild<QLabel*>("meetingCodeLabel")) {
+        meetingCodeLabel->setText(QString("房间: %1  我: %2").arg(roomId, selfStream));
+    }
     return true;
 }
 
@@ -1145,6 +1213,24 @@ void MainWindow::refreshRoomUserList()
 {
     if (!roomUserList) return;
 
+    // 聚焦流离开房间或停止推流时，自动退回宫格，避免主画面停留在失效流
+    if (focusMode && !focusedStream.isEmpty()) {
+        const bool exists = memberStates.contains(focusedStream);
+        const bool isPublishingNow = exists && memberStates.value(focusedStream).pub;
+        if (!exists || !isPublishingNow) {
+            focusMode = false;
+            focusedStream.clear();
+            currentRemoteStream.clear();
+            if (ui && ui->remoteVideolabel) {
+                ui->remoteVideolabel->clear();
+            }
+            if (remoteStack && remoteGridPage) {
+                remoteStack->setCurrentWidget(remoteGridPage);
+            }
+            appendRoomEvent("聚焦成员已离开或停推，已返回宫格视图");
+        }
+    }
+
     QString selectedStream;
     if (auto *cur = roomUserList->currentItem()) {
         selectedStream = cur->data(Qt::UserRole).toString();
@@ -1158,18 +1244,54 @@ void MainWindow::refreshRoomUserList()
         return a < b;
     });
 
+    auto makeStateIcon = [](const MemberState &st) -> QIcon {
+        QPixmap pm(66, 18);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing, true);
+
+        auto drawChip = [&p](int x, const QColor &bg, const QString &txt) {
+            QRect r(x, 1, 20, 16);
+            p.setPen(Qt::NoPen);
+            p.setBrush(bg);
+            p.drawRoundedRect(r, 7, 7);
+            p.setPen(Qt::white);
+            QFont f = p.font();
+            f.setPointSize(8);
+            f.setBold(true);
+            p.setFont(f);
+            p.drawText(r, Qt::AlignCenter, txt);
+        };
+
+        drawChip(0,  st.pub   ? QColor("#2f9e44") : QColor("#6c757d"), "P");
+        drawChip(23, st.audio ? QColor("#2f9e44") : QColor("#c92a2a"), "M");
+        drawChip(46, st.video ? QColor("#2f9e44") : QColor("#c92a2a"), "V");
+
+        if (st.host) {
+            p.setPen(QPen(QColor("#ffd43b"), 2));
+            p.setBrush(Qt::NoBrush);
+            p.drawRoundedRect(QRect(0, 0, 65, 17), 8, 8);
+        }
+        return QIcon(pm);
+    };
+
     roomUserList->blockSignals(true);
     roomUserList->clear();
+    roomUserList->setIconSize(QSize(66, 18));
     for (const QString &stream : streams) {
         const MemberState st = memberStates.value(stream);
         QString text = stream;
-        if (st.host) text += " [主持人]";
-        if (!st.pub) text += " [未推流]";
-        if (!st.audio) text += " [麦关]";
-        if (!st.video) text += " [摄关]";
+        if (st.host) text += "  ·  主持人";
+        else text += "  ·  成员";
+        if (!st.pub) text += "  ·  未推流";
 
         auto *item = new QListWidgetItem(text, roomUserList);
         item->setData(Qt::UserRole, stream);
+        item->setIcon(makeStateIcon(st));
+        item->setToolTip(QString("推流: %1\n麦克风: %2\n摄像头: %3")
+                             .arg(st.pub ? "开启" : "关闭")
+                             .arg(st.audio ? "开启" : "关闭")
+                             .arg(st.video ? "开启" : "关闭"));
         if (st.host) {
             QFont f = item->font();
             f.setBold(true);
@@ -1248,6 +1370,9 @@ void MainWindow::onSignalConnected()
 {
     signalConnected = true;
     if (signalStateLabel) signalStateLabel->setText("信令: 已连接");
+    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
+        signalBadgeLabel->setText("信令在线");
+    }
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
     sendSignalJoin();
 }
@@ -1256,6 +1381,9 @@ void MainWindow::onSignalDisconnected()
 {
     signalConnected = false;
     if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
+    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
+        signalBadgeLabel->setText("信令离线");
+    }
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
     appendRoomEvent("信令已断开");
 
