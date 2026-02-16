@@ -25,6 +25,7 @@
 #include <QVector>
 #include <QSet>
 #include <QAction>
+#include <QTextEdit>
 
 #include "videocapture.h"
 #include "audiocapture.h"
@@ -86,6 +87,7 @@ private slots:
     void onSignalTextMessage(const QString &msg);
     void onRoomUserDoubleClicked(QListWidgetItem *item);
     void onRoomListContextMenu(const QPoint &pos);
+    void onSendChatClicked();
 
 private:
     struct MemberState {
@@ -109,6 +111,8 @@ private:
     void sendSignalLeave();
     void sendSignalUpdate();
     void sendSignalCmd(const QString &toStream, const QString &action);
+    void sendSignalChat(const QString &content);
+    void appendChatMessage(const QString &fromStream,const QString &content,qint64 tsMs,bool isSelf,const QString &msgId=QString());
 
     void setupRemoteGridUi();
     void syncRemoteContainerGeometry();
@@ -193,6 +197,11 @@ private:
     QLabel *roomCountLabel = nullptr;
     QListWidget *roomUserList = nullptr;
     QPlainTextEdit *roomEventLog = nullptr;
+    QPlainTextEdit *chatMessageLog = nullptr;
+    QTextEdit *chatInputEdit = nullptr;
+    QPushButton *sendChatButton = nullptr;
+    QSet<QString> seenChatMsgIds;
+    quint64 chatLocalSeq = 0;
     QAction *selfMicToggleAction = nullptr;
     QAction *selfCamToggleAction = nullptr;
 

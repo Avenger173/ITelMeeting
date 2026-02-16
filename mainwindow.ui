@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1285</width>
+    <width>1416</width>
     <height>764</height>
    </rect>
   </property>
@@ -258,8 +258,8 @@ QLabel#localHintBody{color:#aeb8cb;}</string>
     </item>
     <item>
      <widget class="QFrame" name="bottomControlFrame">
-       <property name="styleSheet">
-        <string notr="true">QFrame#bottomControlFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
+      <property name="styleSheet">
+       <string notr="true">QFrame#bottomControlFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
 QPushButton,QToolButton{background:#2f3b52;color:#eef3ff;border:1px solid #465778;border-radius:6px;padding:6px 14px;font-weight:600;min-height:28px;}
 QPushButton:hover,QToolButton:hover{background:#394661;}
 QPushButton#startReceiveButton{background:#3a4963;border-color:#536788;}
@@ -272,7 +272,7 @@ QFrame#ctrlSep1,QFrame#ctrlSep2{background:#3a4253;max-width:1px;min-width:1px;}
 QFrame#deviceEdgeFrame{background:#1a2230;border:1px solid #334055;border-radius:6px;}
 QComboBox{background:#232c3d;color:#e2e9f8;border:1px solid #425170;border-radius:4px;padding:3px 6px;min-height:24px;}
 QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
-       </property>
+      </property>
       <property name="frameShape">
        <enum>QFrame::Shape::StyledPanel</enum>
       </property>
@@ -330,8 +330,8 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
          </property>
         </widget>
        </item>
-        <item>
-         <widget class="QPushButton" name="captureImageButton">
+       <item>
+        <widget class="QPushButton" name="captureImageButton">
          <property name="text">
           <string>拍照</string>
          </property>
@@ -350,29 +350,29 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
           <string>停止AV录制</string>
          </property>
         </widget>
-        </item>
-        <item>
-         <widget class="QToolButton" name="beautyMenuButton">
-          <property name="text">
-           <string>美颜</string>
-          </property>
-          <property name="popupMode">
-           <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QToolButton" name="moreMenuButton">
-          <property name="text">
-           <string>更多</string>
-          </property>
-          <property name="popupMode">
-           <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="bottomSpacer">
+       </item>
+       <item>
+        <widget class="QToolButton" name="beautyMenuButton">
+         <property name="text">
+          <string>美颜</string>
+         </property>
+         <property name="popupMode">
+          <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="moreMenuButton">
+         <property name="text">
+          <string>更多</string>
+         </property>
+         <property name="popupMode">
+          <enum>QToolButton::ToolButtonPopupMode::MenuButtonPopup</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="bottomSpacer">
          <property name="orientation">
           <enum>Qt::Orientation::Horizontal</enum>
          </property>
@@ -384,59 +384,59 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
          </property>
         </spacer>
        </item>
-        <item>
-         <widget class="QFrame" name="deviceEdgeFrame">
-          <property name="frameShape">
-           <enum>QFrame::Shape::StyledPanel</enum>
+       <item>
+        <widget class="QFrame" name="deviceEdgeFrame">
+         <property name="frameShape">
+          <enum>QFrame::Shape::StyledPanel</enum>
+         </property>
+         <layout class="QHBoxLayout" name="deviceEdgeLayout">
+          <property name="spacing">
+           <number>6</number>
           </property>
-          <layout class="QHBoxLayout" name="deviceEdgeLayout">
-           <property name="leftMargin">
-            <number>8</number>
-           </property>
-           <property name="topMargin">
-            <number>5</number>
-           </property>
-           <property name="rightMargin">
-            <number>8</number>
-           </property>
-           <property name="bottomMargin">
-            <number>5</number>
-           </property>
-           <property name="spacing">
-            <number>6</number>
-           </property>
-           <item>
-            <widget class="QLabel" name="deviceEdgeTitle">
-             <property name="text">
-              <string>设备</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="cameraDevicecomboBox">
-             <property name="minimumSize">
-              <size>
-               <width>120</width>
-               <height>0</height>
-              </size>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="audioDevicecomboBox">
-             <property name="minimumSize">
-              <size>
-               <width>120</width>
-               <height>0</height>
-              </size>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </widget>
-        </item>
-       </layout>
-      </widget>
+          <property name="leftMargin">
+           <number>8</number>
+          </property>
+          <property name="topMargin">
+           <number>5</number>
+          </property>
+          <property name="rightMargin">
+           <number>8</number>
+          </property>
+          <property name="bottomMargin">
+           <number>5</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="deviceEdgeTitle">
+            <property name="text">
+             <string>设备</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="cameraDevicecomboBox">
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>32</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="audioDevicecomboBox">
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>32</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
     </item>
    </layout>
   </widget>
@@ -455,7 +455,12 @@ QListWidget#roomUserList::item:selected{background:#2b3850;border:1px solid #486
 QTabWidget::pane{border:1px solid #2f394d;border-radius:6px;background:#1a2230;}
 QTabBar::tab{background:#263146;color:#ced8eb;padding:6px 12px;border-top-left-radius:4px;border-top-right-radius:4px;}
 QTabBar::tab:selected{background:#334260;color:#f3f7ff;}
-QPlainTextEdit#roomEventLog{background:#111722;border:1px solid #2f394d;border-radius:6px;color:#d6deef;}</string>
+QPlainTextEdit#roomEventLog,QPlainTextEdit#chatMessageLog{background:#111722;border:1px solid #2f394d;border-radius:6px;color:#d6deef;}
+QTextEdit#chatInputEdit{background:#0f1622;border:1px solid #2f394d;border-radius:6px;color:#e7eefb;padding:4px 8px;}
+QTextEdit#chatInputEdit:focus{border:1px solid #4b628c;}
+QPushButton#sendChatButton{background:#344766;color:#f3f7ff;border:1px solid #4e648c;border-radius:6px;padding:4px 12px;}
+QPushButton#sendChatButton:hover{background:#3b5275;}
+QPushButton#sendChatButton:pressed{background:#2e425f;}</string>
    </property>
    <property name="windowTitle">
     <string>房间成员</string>
@@ -535,7 +540,7 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
      <item>
       <widget class="QTabWidget" name="roomTabWidget">
        <property name="currentIndex">
-        <number>0</number>
+        <number>1</number>
        </property>
        <widget class="QWidget" name="memberTab">
         <attribute name="title">
@@ -588,6 +593,83 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
          </item>
         </layout>
        </widget>
+       <widget class="QWidget" name="chatTab">
+        <attribute name="title">
+         <string>聊天</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="chatTabLayout">
+         <property name="leftMargin">
+          <number>4</number>
+         </property>
+         <property name="topMargin">
+          <number>4</number>
+         </property>
+         <property name="rightMargin">
+          <number>4</number>
+         </property>
+         <property name="bottomMargin">
+          <number>4</number>
+         </property>
+         <item>
+          <widget class="QPlainTextEdit" name="chatMessageLog">
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+           <property name="maximumBlockCount">
+            <number>1000</number>
+           </property>
+           <property name="placeholderText">
+            <string>消息中心：支持房间内文本聊天</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="chatInputLayout">
+           <property name="spacing">
+            <number>6</number>
+           </property>
+           <item>
+            <widget class="QTextEdit" name="chatInputEdit">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>56</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>56</height>
+              </size>
+             </property>
+             <property name="placeholderText">
+              <string>输入消息，Enter发送，Shift+Enter换行</string>
+             </property>
+             <property name="acceptRichText">
+              <bool>false</bool>
+             </property>
+             <property name="tabChangesFocus">
+              <bool>false</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="sendChatButton">
+             <property name="minimumSize">
+              <size>
+               <width>64</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>发送</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </widget>
       </widget>
      </item>
     </layout>
@@ -598,7 +680,7 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1285</width>
+     <width>1416</width>
      <height>25</height>
     </rect>
    </property>

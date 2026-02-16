@@ -22,8 +22,11 @@
 #include <QLineEdit>
 #include <QUrl>
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QToolButton>
 #include <algorithm>
+#include<QHBoxLayout>
+#include<QTabWidget>
 
 namespace {
 static bool stopThreadAndDelete(QThread *&thr, const char *tag, int quitWaitMs = 3000) {
@@ -753,7 +756,8 @@ void MainWindow::on_startReceiveButton_clicked()
 
 void MainWindow::setupSignalUi()
 {
-    if (roomDock && roomUserList && roomEventLog && signalStateLabel && roomCountLabel) return;
+    if (roomDock && roomUserList && roomEventLog && signalStateLabel && roomCountLabel &&
+        chatMessageLog && chatInputEdit && sendChatButton) return;
 
     // 优先使用 UI(XML) 中已有控件。
     roomDock = findChild<QDockWidget*>("roomDock");
@@ -761,6 +765,9 @@ void MainWindow::setupSignalUi()
     roomCountLabel = findChild<QLabel*>("roomCountLabel");
     roomUserList = findChild<QListWidget*>("roomUserList");
     roomEventLog = findChild<QPlainTextEdit*>("roomEventLog");
+    chatMessageLog=findChild<QPlainTextEdit*>("chatMessageLog");
+    chatInputEdit=findChild<QTextEdit*>("chatInputEdit");
+    sendChatButton=findChild<QPushButton*>("sendChatButton");
 
     // 若 UI 尚未放入这些控件，则回退到代码创建，保证兼容旧 ui 文件。
     if (!roomDock || !signalStateLabel || !roomCountLabel || !roomUserList || !roomEventLog) {
@@ -799,11 +806,53 @@ void MainWindow::setupSignalUi()
         roomEventLog->setMaximumBlockCount(200);
     }
 
+    // M3: 聊天输入区初始化（优先使用 chatTab；兼容旧 UI 时回退到 eventTab）。
+    if (!chatMessageLog) {
+        chatMessageLog = roomEventLog;
+    }
+    if (!chatInputEdit || !sendChatButton) {
+        QWidget *chatTab = findChild<QWidget*>("chatTab");
+        auto *chatLayout = chatTab ? qobject_cast<QVBoxLayout*>(chatTab->layout()) : nullptr;
+        if (!chatLayout) {
+            QWidget *eventTab = findChild<QWidget*>("eventTab");
+            chatLayout = eventTab ? qobject_cast<QVBoxLayout*>(eventTab->layout()) : nullptr;
+            chatTab = eventTab;
+        }
+        if (chatLayout) {
+            QWidget *parentWidget = chatTab ? chatTab : this;
+            auto *chatRow = new QHBoxLayout;
+            chatRow->setSpacing(6);
+
+            chatInputEdit = new QTextEdit(parentWidget);
+            chatInputEdit->setObjectName("chatInputEdit");
+            chatInputEdit->setPlaceholderText(QStringLiteral("输入消息，Enter发送，Shift+Enter换行"));
+            chatInputEdit->setAcceptRichText(false);
+            chatInputEdit->setFixedHeight(56);
+
+            sendChatButton = new QPushButton(QStringLiteral("发送"), parentWidget);
+            sendChatButton->setObjectName("sendChatButton");
+            sendChatButton->setMinimumWidth(56);
+
+            chatRow->addWidget(chatInputEdit, 1);
+            chatRow->addWidget(sendChatButton, 0);
+
+            chatLayout->addLayout(chatRow);
+        }
+    }
+    if (sendChatButton) {
+        connect(sendChatButton, &QPushButton::clicked, this, &MainWindow::onSendChatClicked, Qt::UniqueConnection);
+    }
+    if (chatInputEdit) {
+        chatInputEdit->setAcceptRichText(false);
+        chatInputEdit->installEventFilter(this);
+    }
+
+
     connect(roomUserList, &QListWidget::itemDoubleClicked, this, &MainWindow::onRoomUserDoubleClicked, Qt::UniqueConnection);
     connect(roomUserList, &QListWidget::customContextMenuRequested, this, &MainWindow::onRoomListContextMenu, Qt::UniqueConnection);
 }
 
-void MainWindow::setupBottomMenus()
+void MainWindow::setupBottomMenus()//聊天面板入口
 {
     auto *beautyBtn = findChild<QToolButton*>("beautyMenuButton");
     if (beautyBtn && !beautyBtn->menu()) {
@@ -827,8 +876,18 @@ void MainWindow::setupBottomMenus()
         share->setEnabled(false);
         auto *whiteboard = moreMenu->addAction("协作白板（待实现）");
         whiteboard->setEnabled(false);
-        auto *chat = moreMenu->addAction("聊天面板（待实现）");
-        chat->setEnabled(false);
+        auto *chat = moreMenu->addAction("聊天面板");
+        connect(chat, &QAction::triggered, this, [this]() {
+            if(roomDock) roomDock->show();
+            if (auto *tabs = findChild<QTabWidget*>("roomTabWidget")) {
+                if (auto *chatTab = findChild<QWidget*>("chatTab")) {
+                    tabs->setCurrentWidget(chatTab);
+                } else if (auto *eventTab = findChild<QWidget*>("eventTab")) {
+                    tabs->setCurrentWidget(eventTab);
+                }
+            }
+            if (chatInputEdit) chatInputEdit->setFocus();
+        });
         auto *participants = moreMenu->addAction("成员管理（待实现）");
         participants->setEnabled(false);
         moreMenu->addSeparator();
@@ -863,6 +922,17 @@ void MainWindow::refreshSelfControlActions()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == chatInputEdit && event->type() == QEvent::KeyPress) {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            if (keyEvent->modifiers().testFlag(Qt::ShiftModifier)) {
+                return false;
+            }
+            onSendChatClicked();
+            return true;
+        }
+    }
+
     if (watched && watched->objectName() == "remoteStageFrame" &&
         (event->type() == QEvent::Resize || event->type() == QEvent::Move || event->type() == QEvent::Show)) {
         syncRemoteContainerGeometry();
@@ -1237,6 +1307,11 @@ void MainWindow::appendRoomEvent(const QString &text)
     if (roomEventLog) {
         roomEventLog->appendPlainText(msg);
     }
+    if (chatMessageLog && chatMessageLog != roomEventLog) {
+        const QString chatLine = QString("[%1] 系统: %2")
+                                     .arg(QDateTime::currentDateTime().toString("hh:mm:ss"), text);
+        chatMessageLog->appendPlainText(chatLine);
+    }
     qInfo() << msg;
 }
 
@@ -1404,6 +1479,53 @@ void MainWindow::sendSignalCmd(const QString &toStream, const QString &action)
     qInfo() << "[SignalCmd] room=" << roomId << "to=" << toStream << "action=" << action;
 }
 
+void MainWindow::sendSignalChat(const QString &content)
+{
+    if(!signalSocket||!signalConnected) return;
+    if(content.trimmed().isEmpty()) return;
+
+    QJsonObject obj;
+    obj["type"]="chat";
+    obj["room"]=roomId;
+    obj["user"]=userId;
+    obj["stream"]=selfStream;
+    obj["content"]=content;
+
+    const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
+    obj["msg_id"]=QString("%1_%2_%3").arg(selfStream).arg(nowMs).arg(++chatLocalSeq);
+    obj["ts"]=nowMs ;
+    obj["ver"]=1;
+
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::appendChatMessage(const QString &fromStream, const QString &content, qint64 tsMs, bool isSelf, const QString &msgId)
+{
+    if(content.trimmed().isEmpty()) return;
+
+    //消息去重，同一个msg_id只显示一次
+    if(!msgId.isEmpty()){
+        if(seenChatMsgIds.contains(msgId)) return;
+        seenChatMsgIds.insert(msgId);
+        if(seenChatMsgIds.size()>1000){
+            seenChatMsgIds.clear();//简单限界，避免集合无限增长
+        }
+    }
+
+    const QString timeText=
+        (tsMs>0)
+        ? QDateTime::fromMSecsSinceEpoch(tsMs).toString("hh:mm:ss")
+        : QDateTime::currentDateTime().toString("hh:mm:ss");
+
+    const QString who=isSelf ? QStringLiteral("我"):fromStream;
+    const QString line=QString("[%1] %2: %3").arg(timeText,who,content);
+
+    if(chatMessageLog){
+        chatMessageLog->appendPlainText(line);
+    }
+    qInfo()<<"[chat]"<<line;
+}
+
 void MainWindow::onSignalConnected()
 {
     signalConnected = true;
@@ -1441,6 +1563,8 @@ void MainWindow::onSignalDisconnected()
     roomHostStream.clear();
     refreshRoomUserList();
     refreshSelfControlActions();
+    seenChatMsgIds.clear();
+    if(chatInputEdit) chatInputEdit->clear();
 }
 
 void MainWindow::onSignalTextMessage(const QString &msg)
@@ -1450,6 +1574,21 @@ void MainWindow::onSignalTextMessage(const QString &msg)
     if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
     const QJsonObject obj = doc.object();
     const QString type = obj.value("type").toString();
+
+    if(type=="chat"){
+        const QString room=obj.value("room").toString();
+        if(!roomId.isEmpty()&&room!=roomId) return;
+
+        const QString fromStream=obj.value("stream").toString();
+        const QString content=obj.value("content").toString();
+        const QString msgId=obj.value("msg_id").toString();
+        const qint64 tsMs=obj.value("ts").toVariant().toLongLong();
+
+        if(fromStream.isEmpty()||content.trimmed().isEmpty()) return;
+
+        appendChatMessage(fromStream,content,tsMs,fromStream==selfStream,msgId);
+        return;
+    }
 
     if (type == "members") {
         const QString room = obj.value("room").toString();
@@ -1734,6 +1873,29 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
             appendRoomEvent(QString("已将主持人转移给 %1").arg(targetStream));
         }
     }
+}
+
+void MainWindow::onSendChatClicked()
+{
+    if(!chatInputEdit) return;
+
+    if(!signalConnected||!signalSocket||signalSocket->state()!=QAbstractSocket::ConnectedState){
+        appendRoomEvent("信令未连接,无法发送聊天消息");
+        return;
+    }
+
+    if(!ensureRoomIdentity(false)) return;
+
+    QString content=chatInputEdit->toPlainText().trimmed();
+    if(content.isEmpty()) return;
+
+    //先做硬限制,避免超长消息刷屏
+    if(content.size()>500){
+        content=content.left(500);
+    }
+
+    sendSignalChat(content);
+    chatInputEdit->clear();
 }
 
 QStringList MainWindow::currentDisplayStreams() const
