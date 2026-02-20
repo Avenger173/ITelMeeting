@@ -129,6 +129,17 @@ MainWindow::MainWindow(QWidget *parent)
     setupRemoteGridUi();
     refreshRemoteTiles();
     setupLoginUi();
+
+    signalReconnectTimer = new QTimer(this);
+    signalReconnectTimer->setSingleShot(true);
+    connect(signalReconnectTimer, &QTimer::timeout, this, [this]() {
+        if (shuttingDown || meetingStopped || manualSignalDisconnect) return;
+        if (signalConnected) return;
+        if (!ensureSignalCredential()) return;
+        if (!ensureRoomIdentity(false)) return;
+        openSignalConnection();
+    });
+
     showLoginOverlay(true, "请输入账号、密码和房间号后登录");
 }
 
@@ -350,6 +361,8 @@ void MainWindow::on_stopMeetingButton_clicked()
         return;
     }
     meetingStopped = true;
+    manualSignalDisconnect = true;
+    resetSignalReconnectState();
     isPublishing = false;
     localScreenShareOn=false;
     qInfo() << "[Mainwindow] stop meeting begin";
@@ -1230,6 +1243,8 @@ void MainWindow::triggerLoginAction(bool registerFirst)
 void MainWindow::on_logoutButton_clicked()
 {
     appendRoomEvent("手动退出登录");
+    manualSignalDisconnect = true;
+    resetSignalReconnectState();
 
     if (signalSocket &&
         (signalSocket->state() == QAbstractSocket::ConnectedState
@@ -1548,32 +1563,49 @@ void MainWindow::onDebugStopAVRecord()
     isRecording=false;
 }
 
-
-void MainWindow::on_startReceiveButton_clicked()
+void MainWindow::resetSignalReconnectState()
 {
-    if (signalConnected) {
-        appendRoomEvent("手动断开信令");
-        if (signalSocket) {
-            sendSignalLeave();
-            signalSocket->close();
-        }
+    signalReconnectAttempt = 0;
+    if (signalReconnectTimer && signalReconnectTimer->isActive()) {
+        signalReconnectTimer->stop();
+    }
+}
+
+void MainWindow::scheduleSignalReconnect(const QString &reason)
+{
+    if (manualSignalDisconnect || meetingStopped || shuttingDown) return;
+    if (signalConnected) return;
+    if (!signalReconnectTimer) return;
+    if (signalReconnectTimer->isActive()) return;
+
+    if (signalReconnectAttempt >= signalReconnectMaxAttempt) {
+        appendRoomEvent(QString("信令重连已停止（超过 %1 次）").arg(signalReconnectMaxAttempt));
         return;
     }
-    if (this->QObject::sender() == ui->startReceiveButton) {
-        pendingAuthRegister = false;
+
+    ++signalReconnectAttempt;
+    const int exp = qMin(signalReconnectAttempt - 1, 5);
+    const int delayMs = qMin(15000, 600 * (1 << exp));
+
+    if (!reason.isEmpty()) {
+        appendRoomEvent(QString("%1，准备重连（%2/%3）")
+                            .arg(reason)
+                            .arg(signalReconnectAttempt)
+                            .arg(signalReconnectMaxAttempt));
     }
-    if (!ensureSignalCredential()) {
-        return;
-    }
-    if (!ensureRoomIdentity(true)) {
-        return;
-    }
+    appendRoomEvent(QString("将在 %1 ms 后重连信令").arg(delayMs));
+    signalReconnectTimer->start(delayMs);
+}
+
+void MainWindow::openSignalConnection()
+{
     if (!signalSocket) {
         signalSocket = new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this);
         connect(signalSocket, &QWebSocket::connected, this, &MainWindow::onSignalConnected);
         connect(signalSocket, &QWebSocket::disconnected, this, &MainWindow::onSignalDisconnected);
         connect(signalSocket, &QWebSocket::textMessageReceived, this, &MainWindow::onSignalTextMessage);
         connect(signalSocket, &QWebSocket::errorOccurred, this, [this](QAbstractSocket::SocketError){
+            if (!signalSocket) return;
             appendRoomEvent(QString("信令错误: %1").arg(signalSocket->errorString()));
         });
     }
@@ -1590,6 +1622,40 @@ void MainWindow::on_startReceiveButton_clicked()
     }
     appendRoomEvent(QString("连接信令服务器: %1").arg(signalUrl));
     signalSocket->open(QUrl(signalUrl));
+}
+
+
+void MainWindow::on_startReceiveButton_clicked()
+{
+    const bool connectedOrConnecting =
+        signalSocket && (signalSocket->state() == QAbstractSocket::ConnectedState
+                         || signalSocket->state() == QAbstractSocket::ConnectingState);
+
+    if (signalConnected || connectedOrConnecting) {
+        manualSignalDisconnect = true;
+        resetSignalReconnectState();
+        appendRoomEvent("手动断开信令");
+        if (signalSocket) {
+            if (signalConnected) sendSignalLeave();
+            signalSocket->close();
+        }
+        return;
+    }
+
+    manualSignalDisconnect = false;
+    resetSignalReconnectState();
+
+    if (this->QObject::sender() == ui->startReceiveButton) {
+        pendingAuthRegister = false;
+    }
+    if (!ensureSignalCredential()) {
+        return;
+    }
+    if (!ensureRoomIdentity(true)) {
+        return;
+    }
+
+    openSignalConnection();
     qInfo() << "[Mainwindow] 接收端已启动(信令)";
 }
 
@@ -2594,6 +2660,10 @@ void MainWindow::appendChatMessage(const QString &fromStream, const QString &con
 void MainWindow::onSignalConnected()
 {
     if (shuttingDown) return;
+    const int reconnectSnapshot = signalReconnectAttempt;
+    manualSignalDisconnect = false;
+    resetSignalReconnectState();
+
     signalConnected = true;
     signalAuthed = false;
     authRegisterTried = pendingAuthRegister;
@@ -2602,6 +2672,10 @@ void MainWindow::onSignalConnected()
         signalBadgeLabel->setText("信令在线");
     }
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
+
+    if (reconnectSnapshot > 0) {
+        appendRoomEvent(QString("信令重连成功（第 %1 次）").arg(reconnectSnapshot));
+    }
     appendRoomEvent(pendingAuthRegister ? "信令已连接，正在注册..." : "信令已连接，正在登录...");
     if (pendingAuthRegister) {
         sendSignalAuthRegister();
@@ -2644,6 +2718,10 @@ void MainWindow::onSignalDisconnected()
     seenWhiteboardMsgIds.clear();
     whiteboardMouseDown=false;
     clearWhiteboard(false);
+
+    if (!manualSignalDisconnect && !meetingStopped && !shuttingDown) {
+        scheduleSignalReconnect("检测到信令断开");
+    }
 }
 
 void MainWindow::onSignalTextMessage(const QString &msg)
@@ -3152,6 +3230,10 @@ void MainWindow::ensurePullSession(const QString &stream)
 
     connect(sess->puller, &rtmppuller::finished, sess->thread, &QThread::quit, Qt::QueuedConnection);
     connect(sess->puller, &rtmppuller::videoFrameReady, this, [this, stream](const QImage &img) {
+        if (PullSession *s = pullSessions.value(stream, nullptr)) {
+            s->retryCount = 0;
+            s->retryEpoch = 0;
+        }
         latestRemoteFrames.insert(stream, img);
         applyTileFrame(stream, img);
         if (focusMode && focusedStream == stream && ui && ui->remoteVideolabel) {
@@ -3185,14 +3267,25 @@ void MainWindow::ensurePullSession(const QString &stream)
         if (meetingStopped || !signalConnected) return;
         const QStringList needed = currentDisplayStreams();
         if (!needed.contains(stream)) return;
-        if (++s->retryCount > 5) {
+
+        if (++s->retryCount > 8) {
             appendRoomEvent(QString("拉流重试超过上限: %1").arg(stream));
             return;
         }
+
         const int retryIndex = s->retryCount;
-        QTimer::singleShot(300 * retryIndex, this, [this, stream]() {
+        const int exp = qMin(retryIndex - 1, 4);
+        const int baseDelay = 300 * (1 << exp);
+        const int jitter = QRandomGenerator::global()->bounded(120);
+        const int delayMs = qMin(5000, baseDelay + jitter);
+        const quint64 epoch = ++s->retryEpoch;
+        appendRoomEvent(QString("准备重试拉流(%1/8): %2").arg(retryIndex).arg(stream));
+
+        QTimer::singleShot(delayMs, this, [this, stream, epoch]() {
             if (meetingStopped || !signalConnected) return;
-            if (!pullSessions.contains(stream)) return;
+            PullSession *s2 = pullSessions.value(stream, nullptr);
+            if (!s2) return;
+            if (s2->retryEpoch != epoch) return;
             const QStringList needed2 = currentDisplayStreams();
             if (!needed2.contains(stream)) return;
             stopPullSession(stream, false);

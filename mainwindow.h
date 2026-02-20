@@ -186,6 +186,9 @@ private:
     bool captureFocusedRemoteImage(QImage *outImage) const;
 
     bool ensureSignalCredential();
+    void openSignalConnection();
+    void resetSignalReconnectState();
+    void scheduleSignalReconnect(const QString &reason = QString());
     void sendSignalAuthLogin();
     void sendSignalAuthRegister();
     void setupLoginUi();
@@ -226,6 +229,7 @@ private:
         rtmppuller *puller = nullptr;
         QThread *thread = nullptr;
         int retryCount = 0;
+        quint64 retryEpoch = 0;
     };
     QHash<QString, PullSession*> pullSessions;
 
@@ -239,6 +243,10 @@ private:
     QWebSocket *signalSocket = nullptr;
     bool signalConnected = false;
     QString signalUrl = "ws://127.0.0.1:9001";
+    QTimer *signalReconnectTimer = nullptr;
+    int signalReconnectAttempt = 0;
+    int signalReconnectMaxAttempt = 12;
+    bool manualSignalDisconnect = false;
     QString roomId;
     QString userId;
     QString selfStream;
