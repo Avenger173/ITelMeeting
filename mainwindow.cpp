@@ -24,9 +24,21 @@
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QToolButton>
+#include <QSlider>
+#include <QSignalBlocker>
 #include <algorithm>
 #include<QHBoxLayout>
 #include<QTabWidget>
+#include<QGuiApplication>
+#include<QScreen>
+#include<QActionGroup>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include<Windows.h>
+#endif
 
 namespace {
 static bool stopThreadAndDelete(QThread *&thr, const char *tag, int quitWaitMs = 3000) {
@@ -45,6 +57,36 @@ static bool stopThreadAndDelete(QThread *&thr, const char *tag, int quitWaitMs =
     return true;
 }
 }
+#ifdef Q_OS_WIN
+namespace{
+struct  WinShareEntry
+{
+    quint64 hwnd=0;
+    QString title;
+};
+
+static BOOL CALLBACK enumShareWindowProc(HWND hwnd,LPARAM lParam){
+    auto *out=reinterpret_cast<QVector<WinShareEntry>*>(lParam);
+    if(!out) return TRUE;
+    if(!IsWindowVisible(hwnd)||IsIconic(hwnd)) return TRUE;
+    const LONG exStyle=GetWindowLong(hwnd,GWL_EXSTYLE);
+    if(exStyle & WS_EX_TOOLWINDOW) return TRUE;
+
+    wchar_t titleBuf[512]={0};
+    const int len=GetWindowTextW(hwnd,titleBuf,511);
+    if(len<=0) return TRUE;
+
+    const QString title=QString::fromWCharArray(titleBuf,len).trimmed();
+    if(title.isEmpty()) return TRUE;
+
+    WinShareEntry e;
+    e.hwnd=static_cast<quint64>(reinterpret_cast<quintptr>(hwnd));
+    e.title=title;
+    out->push_back(e);
+    return TRUE;
+}
+}
+#endif
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -109,6 +151,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::on_startMeetingButton_clicked()
 {
+    localScreenShareOn=false;
     meetingStopped = false;
     audioStopped = false;
     localAudioOn = true;
@@ -143,7 +186,7 @@ void MainWindow::on_startMeetingButton_clicked()
             if(self->meetingStopped) return;
             if(!localLabel) return;
             localLabel->setPixmap(QPixmap::fromImage(img).scaled(
-                localLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
+                localLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
             if (self->camRecording && self->recorder && self->recorder->isOpen()) {
                 self->recorder->pushVideoFrame(img);
             }
@@ -163,6 +206,8 @@ void MainWindow::on_startMeetingButton_clicked()
         }
 
         videoThread->start(QThread::HighPriority);
+        applyLocalVideoSource();
+        applyBeautyToWorker();
     }
 
     if (!encThread) {
@@ -210,7 +255,7 @@ void MainWindow::on_startMeetingButton_clicked()
 
     bool encOk = false;
     QMetaObject::invokeMethod(netEnc, [&]() {
-        encOk = netEnc->openVideo(640, 480, 30);
+        encOk = netEnc->openVideo(1280, 720, 30);
     }, Qt::BlockingQueuedConnection);
     if (!encOk) {
         qWarning() << "[Mainwindow] netEnc openVideo 失败";
@@ -252,7 +297,7 @@ void MainWindow::on_startMeetingButton_clicked()
     const QString pushUrl = QString("rtmp://127.0.0.1/live/%1").arg(selfStream);
     bool rtmpOk = false;
     QMetaObject::invokeMethod(pusher, [&]() {
-        pusher->setVideoParams(640, 480, 30);
+        pusher->setVideoParams(1280, 720, 30);
         pusher->setAudioParams(44100, 1);
         rtmpOk = pusher->start(pushUrl, 30, 44100);
     },Qt::BlockingQueuedConnection);
@@ -286,6 +331,7 @@ void MainWindow::on_stopMeetingButton_clicked()
     }
     meetingStopped = true;
     isPublishing = false;
+    localScreenShareOn=false;
     qInfo() << "[Mainwindow] stop meeting begin";
 
     if (signalConnected) {
@@ -475,7 +521,484 @@ void MainWindow::stopAudioCapture()
     qDebug()<<"[Mainwindow] 音频采集已停止";
 }
 
+void MainWindow::applyLocalVideoSource()
+{
+    if(!videoWorker||!videoThread||!videoThread->isRunning()) return;
+    const int mode=localScreenShareOn?1:0;
 
+    if(localScreenShareOn){
+        videoWorker->setShareTarget(shareScreenIndex,shareWindowId);
+    }
+
+    //不能走QueuedConnection:captureLoop常驻会导致槽不执行
+    videoWorker->setCaptureMode(mode);
+    qInfo()<<"[Share] local source="<<(mode==1?shareSourceName:"camera");
+}
+
+void MainWindow::applyBeautyToWorker()
+{
+    if(!videoWorker) return;
+
+    const int level=qBound(0,localBeautyLevel,100);
+    const int style=localBeautyStyle;
+    QPointer<VideoCapture> worker(videoWorker);
+
+    QMetaObject::invokeMethod(videoWorker,[worker,style,level](){
+        if(!worker) return;
+        worker->setBeautyStyle(style);
+        worker->setBeautyLevel(level);
+        worker->setBeautyEnabled(level>0&&style>0);
+    },Qt::QueuedConnection);
+}
+
+void MainWindow::setBeautyMode(const QString &modeName, int level)
+{
+    localBeautyMode=modeName;
+    int sliderLevel=localBeautyLevel;
+    if(beautyStrengthSlider){
+        sliderLevel=qBound(0,beautyStrengthSlider->value(),100);
+    }
+    int finalLevel=(level>=0)?qBound(0,level,100):sliderLevel;
+
+    if(modeName=="关闭"){
+        localBeautyStyle=0;
+        localBeautyLevel=0;
+    }else{
+        if(modeName=="自然") localBeautyStyle=1;
+        else if(modeName=="清晰") localBeautyStyle=2;
+        else if(modeName=="柔和") localBeautyStyle=3;
+        else if(modeName=="磨皮") localBeautyStyle=4;
+        else if(modeName=="瘦脸") localBeautyStyle=5;
+        else if(modeName=="祛皱") localBeautyStyle=6;
+        else localBeautyStyle=1;
+
+        localBeautyLevel=qBound(1,finalLevel,100);
+        if(beautyStrengthSlider && beautyStrengthSlider->value()!=localBeautyLevel){
+            beautyStrengthSlider->setValue(localBeautyLevel);
+        }
+    }
+    if(beautyStrengthValueLabel){
+        beautyStrengthValueLabel->setText(QString::number(localBeautyLevel));
+    }
+    applyBeautyToWorker();
+    if(localBeautyStyle<=0){
+        appendRoomEvent("美颜已关闭");
+    }else{
+        appendRoomEvent(QString("美颜模式：%1（强度%2）").arg(localBeautyMode).arg(localBeautyLevel));
+    }
+}
+
+void MainWindow::setupWhiteboardUi()
+{
+    if(whiteboardCanvasLabel){
+        whiteboardCanvasLabel->installEventFilter(this);
+        whiteboardCanvasLabel->setMouseTracking(true);
+    }
+    if(whiteboardColorCombo){
+        if(whiteboardColorCombo->count()>=4){
+            whiteboardColorCombo->setItemData(0,"#e03131",Qt::UserRole);//红
+            whiteboardColorCombo->setItemData(1,"#1971c2",Qt::UserRole);//蓝
+            whiteboardColorCombo->setItemData(2,"#2b8a3e",Qt::UserRole);//绿
+            whiteboardColorCombo->setItemData(3,"#111111",Qt::UserRole);//黑
+        }
+    }
+    if(whiteboardWidthSpin){
+        whiteboardWidthSpin->setRange(1,12);
+        if(whiteboardWidthSpin->value()<=0){
+            whiteboardWidthSpin->setValue(3);
+        }
+    }
+    if(whiteboardPenButton){
+        disconnect(whiteboardPenButton,&QToolButton::toggled,this,nullptr);
+        connect(whiteboardPenButton,&QToolButton::toggled,this,[this](bool on){
+            whiteboardPenEnabled=on;
+            appendRoomEvent(on?"白板画笔已开启":"白板画笔已关闭");
+        });
+    }
+    if(whiteboardUndoButton){
+        disconnect(whiteboardUndoButton,&QPushButton::clicked,this,nullptr);
+        connect(whiteboardUndoButton,&QPushButton::clicked,this,[this](){
+            if(!canWriteWhiteboard()){
+                appendRoomEvent("白板已锁定，仅主持人/联席主持人可撤销");
+                return;
+            }
+            undoLastLocalStroke(true);
+        });
+    }
+    if(whiteboardClearButton){
+        disconnect(whiteboardClearButton,&QPushButton::clicked,this,nullptr);
+        connect(whiteboardClearButton,&QPushButton::clicked,this,[this](){
+            if(!canClearWhiteboard()){
+                appendRoomEvent("仅主持人/联席主持人可清空白板");
+                return;
+            }
+            clearWhiteboard(true,selfStream);
+        });
+        whiteboardClearButton->setEnabled(canClearWhiteboard());
+    }
+    if(whiteboardLockButton){
+        disconnect(whiteboardLockButton,&QToolButton::toggled,this,nullptr);
+        connect(whiteboardLockButton,&QToolButton::toggled,this,[this](bool on){
+            const MemberState selfState=memberStates.value(selfStream);
+            const bool canManage=selfState.host||selfState.cohost||!signalConnected;
+            if(!canManage){
+                QSignalBlocker guard(whiteboardLockButton);
+                whiteboardLockButton->setChecked(whiteboardLocked);
+                appendRoomEvent("仅主持人/联席主持人可锁定白板");
+                return;
+            }
+            whiteboardLocked=on;
+            applyWhiteboardLockUi();
+            sendSignalWhiteboardLock(on);
+            appendRoomEvent(on ? "白板已锁定(仅主持人/联席主持人可写)":"白板已解锁(全员可写)");
+        });
+    }
+    applyWhiteboardLockUi();
+    ensureWhiteboardCanvas();
+}
+
+void MainWindow::ensureWhiteboardCanvas()
+{
+    if(!whiteboardCanvasLabel) return;
+    QSize target=whiteboardCanvasLabel->size();
+    if(target.width()<64||target.height()<64) target=QSize(960,540);
+
+    if(whiteboardCanvas.size()==target&&!whiteboardCanvas.isNull()) return;
+
+    QImage newCanvas(target,QImage::Format_ARGB32_Premultiplied);
+    newCanvas.fill(Qt::white);
+
+    if(!whiteboardCanvas.isNull()){
+        QPainter p(&newCanvas);
+        p.setRenderHint(QPainter::SmoothPixmapTransform,true);
+        p.drawImage(QRect(QPoint(0,0),target),whiteboardCanvas);
+    }
+    whiteboardCanvas=newCanvas;
+    updateWhiteboardCanvasLabel();
+}
+
+void MainWindow::updateWhiteboardCanvasLabel()
+{
+    if(!whiteboardCanvasLabel||whiteboardCanvas.isNull()) return;
+    whiteboardCanvasLabel->setPixmap(QPixmap::fromImage(whiteboardCanvas));
+}
+
+QPoint MainWindow::mapWhiteboardPoint(const QPoint &widgetPos) const
+{
+    if(!whiteboardCanvasLabel||whiteboardCanvas.isNull()) return QPoint();
+    const int w=qMax(1,whiteboardCanvasLabel->width()-1);
+    const int h=qMax(1,whiteboardCanvasLabel->height()-1);
+    const int x=qBound(0,widgetPos.x(),w);
+    const int y=qBound(0,widgetPos.y(),h);
+
+    const int cx=(x*qMax(1,whiteboardCanvas.width()-1))/w;
+    const int cy=(y*qMax(1,whiteboardCanvas.height()-1))/h;
+    return QPoint(cx,cy);
+}
+
+QColor MainWindow::whiteboardSelectedColor() const
+{
+    if(whiteboardColorCombo){
+        const QString hex=whiteboardColorCombo->currentData(Qt::UserRole).toString();
+        if(!hex.isEmpty()) return QColor(hex);
+    }
+    return QColor("#e03131");
+}
+
+int MainWindow::whiteboardSelectedWidth() const
+{
+    if(whiteboardWidthSpin) return qBound(1,whiteboardWidthSpin->value(),12);
+    return 3;
+}
+
+bool MainWindow::canClearWhiteboard() const
+{
+    if(!signalConnected) return true;
+    if(memberStates.isEmpty()) return true;
+    const MemberState st=memberStates.value(selfStream);
+    return st.host||st.cohost;
+}
+
+void MainWindow::redrawWhiteboardFromStrokes()
+{
+    ensureWhiteboardCanvas();
+    if(whiteboardCanvas.isNull()) return;
+
+    whiteboardCanvas.fill(Qt::white);
+    QPainter p(&whiteboardCanvas);
+    p.setRenderHint(QPainter::Antialiasing,true);
+
+    for(const auto &stroke : WhiteboardStrokes){
+        QPen pen(stroke.color,stroke.width,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin);
+        p.setPen(pen);
+        for(const QLine &seg : stroke.segments){
+            p.drawLine(seg);
+        }
+    }
+    updateWhiteboardCanvasLabel();
+}
+
+void MainWindow::removeStrokeById(const QString &strokeId, const QString &byStream)
+{
+    if(strokeId.isEmpty()) return;
+
+    QString owner;
+    bool removed=false;
+    for(int i=WhiteboardStrokes.size()-1;i>=0;--i){
+        if(WhiteboardStrokes[i].strokeId==strokeId){
+            owner=WhiteboardStrokes[i].ownerStream;
+            WhiteboardStrokes.removeAt(i);
+            removed=true;
+            break;
+        }
+    }
+    if(!removed) return;
+
+    redrawWhiteboardFromStrokes();
+
+    if(!byStream.isEmpty()){
+        if(byStream==selfStream){
+            appendRoomEvent("你撤销了一笔白板");
+        }else{
+            appendRoomEvent(QString("%1 撤销了一笔白板").arg(byStream));
+        }
+    }
+}
+
+void MainWindow::undoLastLocalStroke(bool broadcast)
+{
+    for(int i=WhiteboardStrokes.size()-1;i>=0;--i){
+        if(WhiteboardStrokes[i].ownerStream==selfStream){
+            const QString sid=WhiteboardStrokes[i].strokeId;
+            removeStrokeById(sid,selfStream);
+            if(broadcast) sendSignalWhiteboardUndo(sid);
+            return;
+        }
+    }
+    appendRoomEvent("没有可撤销的本地笔迹");
+}
+
+void MainWindow::drawWhiteboardLine(const QPoint &from,const QPoint &to,bool broadcast,
+                                    const QColor &color,int width,const QString &strokeId,const QString &ownerStream)
+{
+    ensureWhiteboardCanvas();
+    if(whiteboardCanvas.isNull()) return;
+
+    const QString sid=strokeId.isEmpty()
+        ? QString("st_%1_%2").arg(ownerStream.isEmpty()? selfStream : ownerStream)
+                            .arg(QDateTime::currentMSecsSinceEpoch())
+        :strokeId;
+    const QString owner=ownerStream.isEmpty()?selfStream:ownerStream;
+    const QColor penColor=color.isValid() ? color : QColor("#e03131");
+    const int penWidth=qBound(1,width,12);
+
+    int idx=-1;
+    for(int i=WhiteboardStrokes.size()-1;i>=0;--i){
+        if(WhiteboardStrokes[i].strokeId==sid){
+            idx=i;
+            break;
+        }
+    }
+    if(idx<0){
+        WhiteboardStroke stroke;
+        stroke.strokeId=sid;
+        stroke.ownerStream=owner;
+        stroke.color=penColor;
+        stroke.width=penWidth;
+        WhiteboardStrokes.push_back(stroke);
+        idx=WhiteboardStrokes.size()-1;
+    }
+
+    WhiteboardStrokes[idx].segments.push_back(QLine(from,to));
+
+    QPainter p(&whiteboardCanvas);
+    p.setRenderHint(QPainter::Antialiasing,true);
+    QPen pen(WhiteboardStrokes[idx].color,WhiteboardStrokes[idx].width,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin);
+    p.setPen(pen);
+    p.drawLine(from,to);
+
+    updateWhiteboardCanvasLabel();
+
+    if(broadcast){
+        sendSignalWhiteboardDraw(from,to,WhiteboardStrokes[idx].color,WhiteboardStrokes[idx].width,sid);
+    }
+}
+
+void MainWindow::clearWhiteboard(bool broadcast, const QString &byStream)
+{
+    ensureWhiteboardCanvas();
+    if(whiteboardCanvas.isNull()) return;
+
+    WhiteboardStrokes.clear();
+    whiteboardActionStrokeId.clear();
+
+    whiteboardCanvas.fill(Qt::white);
+    updateWhiteboardCanvasLabel();
+
+    if(broadcast){
+        sendSignalWhiteboardClear();
+    }
+
+    if(!byStream.isEmpty()){
+        appendRoomEvent(byStream==selfStream?"你已清空白板"
+                                            :QString("%1 已清空白板").arg(byStream));
+    }
+}
+
+void MainWindow::sendSignalWhiteboardDraw(const QPoint &from,const QPoint &to,
+                                          const QColor &color,int width,const QString &strokeId)
+{
+    if(!signalSocket||!signalConnected||whiteboardCanvas.isNull()) return;
+
+    const int w=qMax(1,whiteboardCanvas.width()-1);
+    const int h=qMax(1,whiteboardCanvas.height()-1);
+
+    QJsonObject obj;
+    obj["type"]="wb";
+    obj["op"]="draw";
+    obj["room"]=roomId;
+    obj["stream"]=selfStream;
+    obj["x1n"]=(from.x()*10000)/w;
+    obj["y1n"]=(from.y()*10000)/h;
+    obj["x2n"]=(to.x()*10000)/w;
+    obj["y2n"]=(to.y()*10000)/h;
+    obj["color"]=color.name(QColor::HexRgb);
+    obj["pw"]=qBound(1,width,12);
+    obj["stroke_id"]=strokeId;
+
+    const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
+    obj["ts"]=nowMs;
+    obj["msg_id"]=QString("wb_%1_%2_%3").arg(selfStream).arg(nowMs).arg(++whiteboardLocalSeq);
+
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::sendSignalWhiteboardClear()
+{
+    if(!signalSocket||!signalConnected) return;
+
+    QJsonObject obj;
+    obj["type"]="wb";
+    obj["op"]="clear";
+    obj["room"]=roomId;
+    obj["stream"]=selfStream;
+
+    const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
+    obj["ts"]=nowMs;
+    obj["msg_id"]=QString("wb_%1_%2_%3").arg(selfStream).arg(nowMs).arg(++whiteboardLocalSeq);
+
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::sendSignalWhiteboardUndo(const QString &strokeId)
+{
+    if(!signalSocket||!signalConnected||strokeId.isEmpty()) return;
+
+    QJsonObject obj;
+    obj["type"]="wb";
+    obj["op"]="undo";
+    obj["room"]=roomId;
+    obj["stream"]=selfStream;
+    obj["stroke_id"]=strokeId;
+
+    const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
+    obj["ts"]=nowMs;
+    obj["msg_id"]=QString("wb_%1_%2_%3").arg(selfStream).arg(nowMs).arg(++whiteboardLocalSeq);
+
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+bool MainWindow::canWriteWhiteboard() const
+{
+    if(!signalConnected) return true;
+    if(!whiteboardLocked) return true;
+    const MemberState st=memberStates.value(selfStream);
+    return st.host||st.cohost;
+}
+
+void MainWindow::applyWhiteboardLockUi()
+{
+    const MemberState st=memberStates.value(selfStream);
+    const bool canManage=st.host||st.cohost||!signalConnected;
+
+    if(whiteboardLockButton){
+        QSignalBlocker guard(whiteboardLockButton);
+        whiteboardLockButton->setChecked(whiteboardLocked);
+        whiteboardLockButton->setEnabled(canManage);
+        whiteboardLockButton->setText(whiteboardLocked ? "白板已锁":"白板解锁");
+    }
+    const bool canWrite = canWriteWhiteboard();
+    if(whiteboardPenButton){
+        whiteboardPenButton->setEnabled(canWrite);
+    }
+    if(whiteboardUndoButton){
+        whiteboardUndoButton->setEnabled(canWrite);
+    }
+}
+
+void MainWindow::sendSignalWhiteboardLock(bool locked)
+{
+    if(!signalSocket||!signalConnected) return;
+
+    QJsonObject obj;
+    obj["type"]="wb";
+    obj["op"]=locked ? "lock":"unlock";
+    obj["room"]=roomId;
+    obj["stream"]=selfStream;
+    const qint64 nowMs=QDateTime::currentMSecsSinceEpoch();
+    obj["ts"]=nowMs;
+    obj["msg_id"]=QString("wb_%1_%2_%3").arg(selfStream).arg(nowMs).arg(++whiteboardLocalSeq);
+
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+bool MainWindow::ensureSignalCredential()
+{
+    if (!loginUser.isEmpty() && !loginPassword.isEmpty()) {
+        if (userId.isEmpty()) userId = loginUser;
+        return true;
+    }
+
+    bool ok = false;
+    const QString suggestUser = userId.isEmpty()
+                                    ? QString("u%1").arg(QRandomGenerator::global()->bounded(1000, 9999))
+                                    : userId;
+
+    const QString user = QInputDialog::getText(
+                             this, "登录账号", "账号：", QLineEdit::Normal, suggestUser, &ok).trimmed();
+    if (!ok || user.isEmpty()) return false;
+
+    const QString pwd = QInputDialog::getText(
+        this, "登录密码", "密码：", QLineEdit::Password, QString(), &ok);
+    if (!ok || pwd.isEmpty()) return false;
+
+    loginUser = user;
+    loginPassword = pwd;
+    userId = loginUser;
+    return true;
+}
+
+void MainWindow::sendSignalAuthLogin()
+{
+    if (!signalSocket || !signalConnected) return;
+    QJsonObject obj;
+    obj["type"] = "auth_login";
+    obj["user"] = loginUser;
+    obj["password"] = loginPassword;
+    obj["ver"] = 1;
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+void MainWindow::sendSignalAuthRegister()
+{
+    if (!signalSocket || !signalConnected) return;
+    QJsonObject obj;
+    obj["type"] = "auth_register";
+    obj["user"] = loginUser;
+    obj["password"] = loginPassword;
+    obj["ver"] = 1;
+    signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
 
 void MainWindow::on_startRecordButton_clicked()
 {
@@ -726,6 +1249,9 @@ void MainWindow::on_startReceiveButton_clicked()
         }
         return;
     }
+    if (!ensureSignalCredential()) {
+        return;
+    }
     if (!ensureRoomIdentity(true)) {
         return;
     }
@@ -768,6 +1294,14 @@ void MainWindow::setupSignalUi()
     chatMessageLog=findChild<QPlainTextEdit*>("chatMessageLog");
     chatInputEdit=findChild<QTextEdit*>("chatInputEdit");
     sendChatButton=findChild<QPushButton*>("sendChatButton");
+    whiteboardCanvasLabel=findChild<QLabel*>("whiteboardCanvasLabel");
+    whiteboardClearButton=findChild<QPushButton*>("whiteboardClearButton");
+    whiteboardPenButton=findChild<QToolButton*>("whiteboardPenButton");
+    whiteboardColorCombo=findChild<QComboBox*>("whiteboardColorCombo");
+    whiteboardWidthSpin=findChild<QSpinBox*>("whiteboardWidthSpin");
+    whiteboardUndoButton=findChild<QPushButton*>("whiteboardUndoButton");
+    whiteboardLockButton=findChild<QToolButton*>("whiteboardLockButton");
+    setupWhiteboardUi();
 
     // 若 UI 尚未放入这些控件，则回退到代码创建，保证兼容旧 ui 文件。
     if (!roomDock || !signalStateLabel || !roomCountLabel || !roomUserList || !roomEventLog) {
@@ -854,28 +1388,101 @@ void MainWindow::setupSignalUi()
 
 void MainWindow::setupBottomMenus()//聊天面板入口
 {
+    beautyStrengthSlider=findChild<QSlider*>("beautyStrengthSlider");
+    beautyStrengthValueLabel=findChild<QLabel*>("beautyStrengthValueLabel");
+    if(beautyStrengthSlider){
+        beautyStrengthSlider->setRange(0,100);
+        if(localBeautyLevel<=0){
+            localBeautyLevel=60;
+        }
+        beautyStrengthSlider->setValue(qBound(0,localBeautyLevel,100));
+        if(beautyStrengthValueLabel){
+            beautyStrengthValueLabel->setText(QString::number(beautyStrengthSlider->value()));
+        }
+        disconnect(beautyStrengthSlider,nullptr,this,nullptr);
+        connect(beautyStrengthSlider,&QSlider::valueChanged,this,[this](int v){
+            const int vv=qBound(0,v,100);
+            localBeautyLevel=vv;
+            if(beautyStrengthValueLabel){
+                beautyStrengthValueLabel->setText(QString::number(vv));
+            }
+            if(localBeautyStyle>0){
+                applyBeautyToWorker();
+            }
+        });
+    }
+
     auto *beautyBtn = findChild<QToolButton*>("beautyMenuButton");
     if (beautyBtn && !beautyBtn->menu()) {
         auto *beautyMenu = new QMenu(beautyBtn);
+        auto *group=new QActionGroup(beautyMenu);
+        group->setExclusive(true);
+
+        auto *off=beautyMenu->addAction("关闭");
         auto *natural = beautyMenu->addAction("自然");
-        natural->setEnabled(false);
         auto *clear = beautyMenu->addAction("清晰");
-        clear->setEnabled(false);
         auto *soft = beautyMenu->addAction("柔和");
-        soft->setEnabled(false);
         beautyMenu->addSeparator();
-        auto *tone = beautyMenu->addAction("肤色调节（待实现）");
-        tone->setEnabled(false);
+        auto *skin = beautyMenu->addAction("磨皮");
+        auto *slim = beautyMenu->addAction("瘦脸");
+        auto *wrinkle = beautyMenu->addAction("祛皱");
+
+        for(QAction *a : {off,natural,clear,soft,skin,slim,wrinkle}){
+            a->setCheckable(true);
+            a->setActionGroup(group);
+        }
+
+        switch (localBeautyStyle) {
+        case 1: natural->setChecked(true); break;
+        case 2: clear->setChecked(true); break;
+        case 3: soft->setChecked(true); break;
+        case 4: skin->setChecked(true); break;
+        case 5: slim->setChecked(true); break;
+        case 6: wrinkle->setChecked(true); break;
+        default: off->setChecked(true); break;
+        }
+
+        connect(off,&QAction::triggered,this,[this](){setBeautyMode("关闭",0);});
+        connect(natural,&QAction::triggered,this,[this](){setBeautyMode("自然",-1);});
+        connect(clear,&QAction::triggered,this,[this](){setBeautyMode("清晰",-1);});
+        connect(soft,&QAction::triggered,this,[this](){setBeautyMode("柔和",-1);});
+        connect(skin,&QAction::triggered,this,[this](){setBeautyMode("磨皮",-1);});
+        connect(slim,&QAction::triggered,this,[this](){setBeautyMode("瘦脸",-1);});
+        connect(wrinkle,&QAction::triggered,this,[this](){setBeautyMode("祛皱",-1);});
+
         beautyBtn->setMenu(beautyMenu);
     }
 
     auto *moreBtn = findChild<QToolButton*>("moreMenuButton");
     if (moreBtn && !moreBtn->menu()) {
         auto *moreMenu = new QMenu(moreBtn);
-        auto *share = moreMenu->addAction("屏幕共享（待实现）");
-        share->setEnabled(false);
-        auto *whiteboard = moreMenu->addAction("协作白板（待实现）");
-        whiteboard->setEnabled(false);
+
+        auto *pickShareSourceAction=moreMenu->addAction("选择共享源...");
+        connect(pickShareSourceAction,&QAction::triggered,this,&MainWindow::chooseShareSource);
+
+        selfShareToggleAction=moreMenu->addAction(localScreenShareOn?"停止屏幕共享":"开始屏幕共享");
+        connect(selfShareToggleAction,&QAction::triggered,this,[this](){
+            if(meetingStopped||!videoWorker){
+                appendRoomEvent("请先开始会议后再进行屏幕共享");
+                return;
+            }
+            localScreenShareOn=!localScreenShareOn;
+            applyLocalVideoSource();
+            sendSignalUpdate();
+            appendRoomEvent(localScreenShareOn?"你已开启屏幕共享":"你已停止屏幕共享");
+            refreshSelfControlActions();
+        });
+
+        auto *whiteboard = moreMenu->addAction("协作白板");
+        connect(whiteboard,&QAction::triggered,this,[this](){
+            if(roomDock) roomDock->show();
+            if(auto *tabs=findChild<QTabWidget*>("roomTabWidget")){
+                if(auto *wbTab=findChild<QWidget*>("whiteboardTab")){
+                    tabs->setCurrentWidget(wbTab);
+                }
+            }
+        });
+
         auto *chat = moreMenu->addAction("聊天面板");
         connect(chat, &QAction::triggered, this, [this]() {
             if(roomDock) roomDock->show();
@@ -918,6 +1525,16 @@ void MainWindow::refreshSelfControlActions()
     if (selfCamToggleAction) {
         selfCamToggleAction->setText(localVideoOn ? "关闭我的摄像头" : "开启我的摄像头");
     }
+    if(selfShareToggleAction){
+        selfShareToggleAction->setText(localScreenShareOn?"停止屏幕共享":"开始屏幕共享");
+    }
+    if(auto *shareBadgeLabel=findChild<QLabel*>("shareBadgeLabel")){
+        shareBadgeLabel->setText(localScreenShareOn?QString("共享:%1").arg(shareSourceName):"共享:关");
+    }
+    if(whiteboardClearButton){
+        whiteboardClearButton->setEnabled(canClearWhiteboard());
+    }
+    applyWhiteboardLockUi();
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
@@ -929,6 +1546,57 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                 return false;
             }
             onSendChatClicked();
+            return true;
+        }
+    }
+
+    if(watched==whiteboardCanvasLabel){
+
+        if(!canWriteWhiteboard()){
+            if(event->type()==QEvent::MouseButtonPress){
+                appendRoomEvent("白板已锁定,仅主持人/联席主持人可书写");
+            }
+            return true;
+        }
+
+        if(event->type()==QEvent::Show||event->type()==QEvent::Resize){
+            ensureWhiteboardCanvas();
+            return false;
+        }
+
+        if(!whiteboardPenEnabled) return false;
+
+        auto *me=dynamic_cast<QMouseEvent*>(event);
+        if(!me) return false;
+
+        if(event->type()==QEvent::MouseButtonPress&&me->button()==Qt::LeftButton){
+            whiteboardMouseDown=true;
+            whiteboardLastPoint=mapWhiteboardPoint(me->pos());
+            whiteboardActionStrokeId=QString("st_%1_%2_%3")
+                                           .arg(selfStream)
+                                           .arg(QDateTime::currentMSecsSinceEpoch())
+                                           .arg(++whiteboardLocalSeq);
+            return true;
+        }
+
+        if(event->type()==QEvent::MouseMove && whiteboardMouseDown && (me->buttons() & Qt::LeftButton)){
+            const QPoint cur=mapWhiteboardPoint(me->pos());
+            drawWhiteboardLine(whiteboardLastPoint,cur,true,
+                                whiteboardSelectedColor(),whiteboardSelectedWidth(),
+                                whiteboardActionStrokeId,selfStream);
+            whiteboardLastPoint=cur;
+            return true;
+        }
+
+        if(event->type()==QEvent::MouseButtonRelease&&me->button()==Qt::LeftButton){
+            if(whiteboardMouseDown){
+                const QPoint cur=mapWhiteboardPoint(me->pos());
+                drawWhiteboardLine(whiteboardLastPoint,cur,true,
+                                    whiteboardSelectedColor(),whiteboardSelectedWidth(),
+                                    whiteboardActionStrokeId,selfStream);
+            }
+            whiteboardMouseDown=false;
+            whiteboardActionStrokeId.clear();
             return true;
         }
     }
@@ -1167,6 +1835,8 @@ void MainWindow::refreshRemoteTiles()
         if (!st.pub) flags << "未推流";
         tile.stateLabel->setText(flags.isEmpty() ? "双击聚焦" : flags.join(" | "));
 
+        if(st.share) flags<<"共享中";
+
         auto chip = [](const QString &txt, const QString &bg) {
             return QString("<span style=\"background:%1;color:#ffffff;padding:1px 5px;border-radius:7px;\">%2</span>")
                 .arg(bg, txt);
@@ -1178,6 +1848,7 @@ void MainWindow::refreshRemoteTiles()
             chips << chip("麦", st.audio ? "#2f9e44" : "#c92a2a");
             chips << chip("摄", st.video ? "#2f9e44" : "#c92a2a");
             if (!st.pub) chips << chip("停", "#6c757d");
+            if(st.share) chips<<chip("享","#2b8a3e");
             tile.cornerBadge->setText(chips.join(" "));
             tile.cornerBadge->adjustSize();
             tile.cornerBadge->move(tile.frame->width() - tile.cornerBadge->width() - 8, 8);
@@ -1224,7 +1895,7 @@ void MainWindow::applyTileFrame(const QString &stream, const QImage &img)
     if (!tile.videoLabel) return;
 
     tile.videoLabel->setPixmap(
-        QPixmap::fromImage(img).scaled(tile.videoLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation)
+        QPixmap::fromImage(img).scaled(tile.videoLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)
     );
     tile.videoLabel->setText("");
     tile.hasFrame = true;
@@ -1266,6 +1937,7 @@ void MainWindow::updateFocusStatusBadge()
     flags << (st.audio ? "麦克风开" : "麦克风关");
     flags << (st.video ? "摄像头开" : "摄像头关");
     if (!st.pub) flags << "未推流";
+    if(st.share) flags<<"共享中";
 
     focusStatusLabel->setText(flags.join("  |  "));
     focusStatusLabel->adjustSize();
@@ -1291,8 +1963,10 @@ bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
         roomId = QString::number(QRandomGenerator::global()->bounded(100000, 999999));
     }
     if (userId.isEmpty()) {
-        userId = QString("u%1").arg(QRandomGenerator::global()->bounded(1000, 9999));
+        if (!loginUser.isEmpty()) userId = loginUser;
+        else userId = QString("u%1").arg(QRandomGenerator::global()->bounded(1000, 9999));
     }
+
     selfStream = QString("%1_%2").arg(roomId, userId);
     if (auto *meetingCodeLabel = findChild<QLabel*>("meetingCodeLabel")) {
         meetingCodeLabel->setText(QString("房间: %1  我: %2").arg(roomId, selfStream));
@@ -1394,16 +2068,19 @@ void MainWindow::refreshRoomUserList()
         else if (st.cohost) text += "  ·  联席主持人";
         else text += "  ·  成员";
         if (!st.pub) text += "  ·  未推流";
+        if(st.share) text+="  .  共享中";
 
         auto *item = new QListWidgetItem(text, roomUserList);
         item->setData(Qt::UserRole, stream);
         item->setIcon(makeStateIcon(st));
         const QString roleText = st.host ? "主持人" : (st.cohost ? "联席主持人" : "成员");
-        item->setToolTip(QString("角色: %1\n推流: %2\n麦克风: %3\n摄像头: %4")
+        item->setToolTip(QString("角色: %1\n推流: %2\n麦克风: %3\n摄像头: %4\n共享: %5")
                              .arg(roleText)
                              .arg(st.pub ? "开启" : "关闭")
                              .arg(st.audio ? "开启" : "关闭")
-                             .arg(st.video ? "开启" : "关闭"));
+                             .arg(st.video ? "开启" : "关闭")
+                             .arg(st.share?"是":"否"));
+
         if (st.host || st.cohost) {
             QFont f = item->font();
             f.setBold(true);
@@ -1424,6 +2101,10 @@ void MainWindow::refreshRoomUserList()
 
 void MainWindow::sendSignalJoin()
 {
+    if (!signalAuthed) {
+        appendRoomEvent("尚未完成登录，已阻止入会");
+        return;
+    }
     if (!signalSocket || !signalConnected) return;
     if (!ensureRoomIdentity(false)) return;
 
@@ -1435,6 +2116,7 @@ void MainWindow::sendSignalJoin()
     obj["audio"] = localAudioOn;
     obj["video"] = localVideoOn;
     obj["pub"] = isPublishing;
+    obj["share"]=localScreenShareOn;
 
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
     appendRoomEvent(QString("已加入房间 %1，用户 %2").arg(roomId, selfStream));
@@ -1462,6 +2144,7 @@ void MainWindow::sendSignalUpdate()
     obj["audio"] = localAudioOn;
     obj["video"] = localVideoOn;
     obj["pub"] = isPublishing;
+    obj["share"]=localScreenShareOn;
 
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
@@ -1499,6 +2182,75 @@ void MainWindow::sendSignalChat(const QString &content)
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+void MainWindow::chooseShareSource()
+{
+    const auto candidates=buildShareSourceCandidates();
+    if(candidates.isEmpty()){
+        appendRoomEvent("未发现可共享源");
+        return;
+    }
+
+    QStringList labels;
+    int currentIndex=0;
+    for(int i=0;i<candidates.size();++i){
+        labels<<candidates[i].label;
+        const bool match=candidates[i].isWindow
+                            ?(shareWindowId!=0&&candidates[i].windowId==shareWindowId)
+                            :(shareWindowId==0&&candidates[i].screenIndex==shareScreenIndex);
+        if(match) currentIndex=i;
+    }
+
+    bool ok=false;
+    const QString picked=QInputDialog::getItem(this,"选择共享源","请选择共享对象:",labels,currentIndex,false,&ok);
+    if(!ok||picked.isEmpty()) return;
+
+    const int idx=labels.indexOf(picked);
+    if(idx<0) return;
+
+    const auto &sel=candidates[idx];
+    shareWindowId=sel.windowId;
+    shareScreenIndex=sel.screenIndex;
+    shareSourceName=sel.label;
+
+    appendRoomEvent(QString("共享源已切换：%1").arg(shareSourceName));
+
+    if(localScreenShareOn){
+        applyLocalVideoSource();//共享中切源即时生效
+    }
+    refreshSelfControlActions();
+}
+
+QVector<MainWindow::ShareSourceCandidate> MainWindow::buildShareSourceCandidates() const
+{
+    QVector<ShareSourceCandidate> out;
+
+    const auto screens=QGuiApplication::screens();
+    for(int i=0;i<screens.size();++i){
+        ShareSourceCandidate c;
+        c.isWindow=false;
+        c.screenIndex=i;
+        c.windowId=0;
+        c.label=QString("屏幕%1 (%2x%3) ").arg(i+1).arg(screens[i]->size().width()).arg(screens[i]->size().height());
+        out.push_back(c);
+    }
+
+#ifdef Q_OS_WIN
+    QVector<WinShareEntry> winList;
+    EnumWindows(enumShareWindowProc,reinterpret_cast<LPARAM>(&winList));
+    QSet<quint64> seen;
+    for(const auto &w:winList){
+        if(seen.contains(w.hwnd)) continue;
+        seen.insert(w.hwnd);
+        ShareSourceCandidate c;
+        c.isWindow=true;
+        c.windowId=w.hwnd;
+        c.label=QString("窗口：%1").arg(w.title);
+        out.push_back(c);
+    }
+#endif
+    return out;
+}
+
 void MainWindow::appendChatMessage(const QString &fromStream, const QString &content, qint64 tsMs, bool isSelf, const QString &msgId)
 {
     if(content.trimmed().isEmpty()) return;
@@ -1529,17 +2281,22 @@ void MainWindow::appendChatMessage(const QString &fromStream, const QString &con
 void MainWindow::onSignalConnected()
 {
     signalConnected = true;
+    signalAuthed = false;
+    authRegisterTried = false;
     if (signalStateLabel) signalStateLabel->setText("信令: 已连接");
     if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
         signalBadgeLabel->setText("信令在线");
     }
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
-    sendSignalJoin();
+    appendRoomEvent("信令已连接，正在登录...");
+    sendSignalAuthLogin();
     refreshSelfControlActions();
 }
 
 void MainWindow::onSignalDisconnected()
 {
+    signalAuthed = false;
+    authRegisterTried = false;
     signalConnected = false;
     if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
     if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
@@ -1565,6 +2322,9 @@ void MainWindow::onSignalDisconnected()
     refreshSelfControlActions();
     seenChatMsgIds.clear();
     if(chatInputEdit) chatInputEdit->clear();
+    seenWhiteboardMsgIds.clear();
+    whiteboardMouseDown=false;
+    clearWhiteboard(false);
 }
 
 void MainWindow::onSignalTextMessage(const QString &msg)
@@ -1574,6 +2334,46 @@ void MainWindow::onSignalTextMessage(const QString &msg)
     if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
     const QJsonObject obj = doc.object();
     const QString type = obj.value("type").toString();
+
+    if (type == "auth_ok") {
+        signalAuthed = true;
+        authRegisterTried = false;
+        loginUser = obj.value("user").toString(loginUser);
+        if (!loginUser.isEmpty()) userId = loginUser;
+        appendRoomEvent(QString("登录成功: %1").arg(loginUser));
+        sendSignalJoin();
+        return;
+    }
+
+    if (type == "auth_registered") {
+        appendRoomEvent("账号注册成功，正在登录...");
+        sendSignalAuthLogin();
+        return;
+    }
+
+    if (type == "auth_fail") {
+        const QString code = obj.value("code").toString();
+        const QString msgText = obj.value("msg").toString("登录失败");
+        appendRoomEvent(QString("登录失败[%1]: %2").arg(code, msgText));
+
+        if (code == "no_user" && !authRegisterTried) {
+            authRegisterTried = true;
+            if (QMessageBox::question(this, "注册账号", "账号不存在，是否自动注册并登录？")
+                == QMessageBox::Yes) {
+                sendSignalAuthRegister();
+                return;
+            }
+        }
+        if (signalSocket) signalSocket->close();
+        return;
+    }
+
+    if (type == "auth_required") {
+        signalAuthed = false;
+        appendRoomEvent("服务端要求先登录");
+        return;
+    }
+
 
     if(type=="chat"){
         const QString room=obj.value("room").toString();
@@ -1590,9 +2390,69 @@ void MainWindow::onSignalTextMessage(const QString &msg)
         return;
     }
 
+    if(type=="wb"){
+        const QString room=obj.value("room").toString();
+        if(!roomId.isEmpty()&&room!=roomId) return;
+
+        const QString fromStream=obj.value("stream").toString();
+        if(fromStream.isEmpty()) return;
+        if(fromStream==selfStream) return;//自己发的本地已画，避免重复
+
+        const QString msgId=obj.value("msg_id").toString();
+        if(!msgId.isEmpty()){
+            if(seenWhiteboardMsgIds.contains(msgId)) return;
+            seenWhiteboardMsgIds.insert(msgId);
+            if(seenWhiteboardMsgIds.size()>3000) seenWhiteboardMsgIds.clear();
+        }
+
+        const QString op=obj.value("op").toString();
+        if(op=="lock"||op=="unlock"){
+            whiteboardLocked=(op=="lock");
+            applyWhiteboardLockUi();
+            appendRoomEvent(whiteboardLocked
+                            ? QString("%1 锁定了白板").arg(fromStream)
+                            : QString("%1 解锁了白板").arg(fromStream));
+            return;
+        }
+        if(op=="clear"){
+            clearWhiteboard(false,fromStream);
+            return;
+        }
+        if(op=="draw"){
+            ensureWhiteboardCanvas();
+            if(whiteboardCanvas.isNull()) return;
+
+            const int w=qMax(1,whiteboardCanvas.width()-1);
+            const int h=qMax(1,whiteboardCanvas.height()-1);
+
+            auto denormX=[&](int n){ return qBound(0,(n*w)/10000,w);};
+            auto denormY=[&](int n){ return qBound(0,(n*h)/10000,h);};
+
+            const QPoint p1(denormX(obj.value("x1n").toInt()),denormY(obj.value("y1n").toInt()));
+            const QPoint p2(denormX(obj.value("x2n").toInt()),denormY(obj.value("y2n").toInt()));
+
+            const QColor c(obj.value("color").toString("#e03131"));
+            const int pw=qBound(1,obj.value("pw").toInt(3),12);
+            const QString sid=obj.value("stroke_id").toString(obj.value("msg_id").toString());
+
+            drawWhiteboardLine(p1,p2,false,c,pw,sid,fromStream);
+            return;
+        }
+        if(op=="undo"){
+            const QString sid=obj.value("stroke_id").toString();
+            removeStrokeById(sid,fromStream);
+            return;
+        }
+    }
     if (type == "members") {
         const QString room = obj.value("room").toString();
         if (!roomId.isEmpty() && room != roomId) return;
+
+        const bool serverWbLock=obj.value("wb_lock").toBool(false);
+        if(whiteboardLocked!=serverWbLock){
+            whiteboardLocked=serverWbLock;
+            applyWhiteboardLockUi();
+        }
 
         const bool oldSelfHost = memberStates.value(selfStream).host;
         const bool oldSelfCoHost = memberStates.value(selfStream).cohost;
@@ -1609,6 +2469,7 @@ void MainWindow::onSignalTextMessage(const QString &msg)
             st.audio = m.value("audio").toBool(true);
             st.video = m.value("video").toBool(true);
             st.pub = m.value("pub").toBool(false);
+            st.share=m.value("share").toBool(false);
             const QString role = m.value("role").toString();
             st.host = (role == "host");
             st.cohost = (role == "cohost");
@@ -1640,6 +2501,12 @@ void MainWindow::onSignalTextMessage(const QString &msg)
             if (oldVideo != localVideoOn) {
                 appendRoomEvent(localVideoOn ? "摄像头已开启" : "主持人已关闭你的摄像头");
             }
+            const bool oldShare=localScreenShareOn;
+            localScreenShareOn=selfState.share;
+            if(oldShare!=localScreenShareOn){
+                appendRoomEvent(localScreenShareOn?"屏幕共享已开启":"屏幕共享已停止");
+                applyLocalVideoSource();
+            }
             if (!oldSelfHost && selfState.host) {
                 appendRoomEvent("你已成为主持人");
             } else if (oldSelfHost && !selfState.host) {
@@ -1650,7 +2517,7 @@ void MainWindow::onSignalTextMessage(const QString &msg)
             } else if (oldSelfCoHost && !selfState.cohost && !selfState.host) {
                 appendRoomEvent("你的联席主持人身份已取消");
             }
-            if (oldAudio != localAudioOn || oldVideo != localVideoOn) {
+            if (oldAudio != localAudioOn || oldVideo != localVideoOn||oldShare!=localScreenShareOn) {
                 refreshSelfControlActions();
             }
         }
@@ -1706,6 +2573,14 @@ void MainWindow::onSignalTextMessage(const QString &msg)
             on_stopMeetingButton_clicked();
             return;
         }
+        if(action=="stop_share"){
+            localScreenShareOn=false;
+            applyLocalVideoSource();
+            appendRoomEvent("主持人已停止你的屏幕共享");
+            sendSignalUpdate();
+            refreshSelfControlActions();
+            return;
+        }
     }
 }
 
@@ -1752,6 +2627,7 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
         QAction *allUnmuteAudio = nullptr;
         QAction *allMuteVideo = nullptr;
         QAction *allUnmuteVideo = nullptr;
+        QAction *allStopShare=nullptr;
 
         if (selfIsHost) {
             menu.addSeparator();
@@ -1760,6 +2636,7 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
             menu.addSeparator();
             allMuteVideo = menu.addAction("全体关闭摄像头（不含自己）");
             allUnmuteVideo = menu.addAction("全体开启摄像头（不含自己）");
+            allStopShare=menu.addAction("全体停止共享(不含自己");
         }
 
         picked = menu.exec(roomUserList->viewport()->mapToGlobal(pos));
@@ -1801,6 +2678,8 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
             sendToAll("mute_video", "主持人执行全体关闭摄像头");
         } else if (picked == allUnmuteVideo) {
             sendToAll("unmute_video", "主持人执行全体开启摄像头");
+        }else if(picked==allStopShare){
+            sendToAll("stop_share","主持人执行全体停止共享");
         }
         return;
     }
@@ -1827,6 +2706,7 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
     QAction *setCoHost = nullptr;
     QAction *unsetCoHost = nullptr;
     QAction *transferHost = nullptr;
+    QAction *stopShare=nullptr;
     if (selfIsHost) {
         menu.addSeparator();
         if (!targetState.host && !targetState.cohost) {
@@ -1836,6 +2716,10 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
         }
         if (!targetState.host) {
             transferHost = menu.addAction("转移主持人给该成员");
+        }
+        if(targetState.share){
+            menu.addSeparator();
+            stopShare=menu.addAction("停止该成员共享");
         }
     }
 
@@ -1872,6 +2756,9 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
             sendSignalCmd(targetStream, "set_host");
             appendRoomEvent(QString("已将主持人转移给 %1").arg(targetStream));
         }
+    }else if(picked==stopShare){
+        sendSignalCmd(targetStream,"stop_share");
+        appendRoomEvent(QString("已对%1发送停止共享").arg(targetStream));
     }
 }
 
@@ -1938,7 +2825,7 @@ void MainWindow::ensurePullSession(const QString &stream)
         applyTileFrame(stream, img);
         if (focusMode && focusedStream == stream && ui && ui->remoteVideolabel) {
             ui->remoteVideolabel->setPixmap(
-                QPixmap::fromImage(img).scaled(ui->remoteVideolabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation)
+                QPixmap::fromImage(img).scaled(ui->remoteVideolabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)
             );
         }
     });

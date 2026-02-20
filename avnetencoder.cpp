@@ -32,8 +32,8 @@ bool AvNetEncoder::openVideo(int w, int h, int fps)
     vCtx_->pix_fmt=AV_PIX_FMT_YUV420P;
     vCtx_->time_base=AVRational{1,1000};
     vCtx_->framerate=AVRational{fps_,1};
-    vCtx_->bit_rate=800000;//先给中等码率
-    const int gop=qMax(1,fps_/3);
+    vCtx_->bit_rate=2200000;
+    const int gop=qMax(1,fps_);
     vCtx_->gop_size=gop;
     vCtx_->max_b_frames=0;//实时禁言B帧
     vCtx_->keyint_min=gop;
@@ -139,7 +139,7 @@ void AvNetEncoder::pushVideoFrame(const QImage &img)
     int srcLinesize[4]={static_cast<int>(rgb.bytesPerLine()),0,0,0};
 
     sws_scale(sws_,srcData,srcLinesize,0,h_,yuv_->data,yuv_->linesize);
-    const int gop=qMax(1,fps_/3);
+    const int gop=qMax(1,fps_);
     //强制关键帧：第一帧+每2秒一帧
     const bool forceKey=(vFrameIndex_==0||(vFrameIndex_%gop==0));
     if(forceKey){
@@ -199,7 +199,7 @@ void AvNetEncoder::setX2640pts_(AVCodecContext *c, int fps)
     av_opt_set(c->priv_data,"repeat-headers","1",0);
     av_opt_set(c->priv_data,"annexb","1",0);
     //GOP:2秒一个IDR，方便接收端中途加入
-    const int gop=qMax(1,fps/3);
+    const int gop=qMax(1,fps);
     av_opt_set_int(c->priv_data,"keyint",gop,0);
     av_opt_set_int(c->priv_data,"min-keyint",gop,0);
     av_opt_set(c->priv_data,"scenecut","0",0);

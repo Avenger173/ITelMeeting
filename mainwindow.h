@@ -1,4 +1,4 @@
-#ifndef MAINWINDOW_H
+﻿#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
@@ -26,6 +26,11 @@
 #include <QSet>
 #include <QAction>
 #include <QTextEdit>
+#include <QColor>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QSlider>
+#include <QLine>
 
 #include "videocapture.h"
 #include "audiocapture.h"
@@ -98,6 +103,7 @@ private:
         bool pub = false;
         bool host = false;
         bool cohost = false;
+        bool share=false;
     };
 
     void setupSignalUi();
@@ -112,6 +118,17 @@ private:
     void sendSignalUpdate();
     void sendSignalCmd(const QString &toStream, const QString &action);
     void sendSignalChat(const QString &content);
+    //鍏变韩婧愰€夋嫨
+    struct  ShareSourceCandidate
+    {
+        bool isWindow=false;//false=灞忓箷锛宼ure=绐楀彛
+        int screenIndex=0;//灞忓箷绱㈠紩
+        quint64 windowId=0;//绐楀彛鍙ユ焺(windows)
+        QString label;//UI鏄剧ず鍚?
+    };
+    QVector<ShareSourceCandidate> buildShareSourceCandidates() const;
+    void chooseShareSource();
+
     void appendChatMessage(const QString &fromStream,const QString &content,qint64 tsMs,bool isSelf,const QString &msgId=QString());
 
     void setupRemoteGridUi();
@@ -132,6 +149,38 @@ private:
     void startAudioCapture();
     void stopAudioCapture();
 
+    void applyLocalVideoSource();
+    void applyBeautyToWorker();
+    void setBeautyMode(const QString &modeName,int level);
+    //鐧芥澘
+    void setupWhiteboardUi();
+    void ensureWhiteboardCanvas();
+    void updateWhiteboardCanvasLabel();
+    QPoint mapWhiteboardPoint(const QPoint &widgetPos) const;
+
+    QColor whiteboardSelectedColor() const;
+    int whiteboardSelectedWidth() const;
+    bool canClearWhiteboard() const;
+
+    void drawWhiteboardLine(const QPoint &from,const QPoint &to,bool broadcast,
+                            const QColor &color,int width,const QString &strokeId,const QString &ownerStream);
+    void redrawWhiteboardFromStrokes();
+    void removeStrokeById(const QString &strokeId,const QString &byStream=QString());
+    void undoLastLocalStroke(bool broadcast);
+
+    void clearWhiteboard(bool broadcast,const QString &byStream=QString());
+    void sendSignalWhiteboardDraw(const QPoint &from,const QPoint &to,
+                                  const QColor &color,int width,const QString &strokeId);
+    void sendSignalWhiteboardClear();
+    void sendSignalWhiteboardUndo(const QString &strokeId);
+
+    bool canWriteWhiteboard() const;
+    void applyWhiteboardLockUi();
+    void sendSignalWhiteboardLock(bool locked);
+
+    bool ensureSignalCredential();
+    void sendSignalAuthLogin();
+    void sendSignalAuthRegister();
 private:
     Ui::MainWindow *ui = nullptr;
     QTimer *timer = nullptr;
@@ -204,6 +253,7 @@ private:
     quint64 chatLocalSeq = 0;
     QAction *selfMicToggleAction = nullptr;
     QAction *selfCamToggleAction = nullptr;
+    QAction *selfShareToggleAction=nullptr;
 
     struct RemoteTile {
         QFrame *frame = nullptr;
@@ -223,6 +273,50 @@ private:
     QHash<QString, int> streamToTile;
     QString focusedStream;
     bool focusMode = false;
+    bool localScreenShareOn=false;
+    int shareScreenIndex=0;
+
+    int localBeautyLevel=60;//0~100，默认强度
+    QString localBeautyMode=QStringLiteral("鍏抽棴");
+    int localBeautyStyle=0;//0关 1自然 2清晰 3柔和 4磨皮 5瘦脸 6祛皱
+    QSlider *beautyStrengthSlider=nullptr;
+    QLabel *beautyStrengthValueLabel=nullptr;
+    QToolButton *whiteboardLockButton=nullptr;
+    bool whiteboardLocked=false;
+
+    quint64 shareWindowId=0;
+    QString shareSourceName=QStringLiteral("灞忓箷1");
+
+    QLabel *whiteboardCanvasLabel=nullptr;
+    QPushButton *whiteboardClearButton=nullptr;
+    QToolButton *whiteboardPenButton=nullptr;
+    QImage whiteboardCanvas;
+    bool whiteboardPenEnabled=true;
+    bool whiteboardMouseDown=false;
+    QPoint whiteboardLastPoint;
+    QSet<QString> seenWhiteboardMsgIds;
+    quint64 whiteboardLocalSeq=0;
+
+    QComboBox *whiteboardColorCombo=nullptr;
+    QSpinBox *whiteboardWidthSpin=nullptr;
+    QPushButton *whiteboardUndoButton=nullptr;
+
+    struct WhiteboardStroke
+    {
+        QString strokeId;
+        QString ownerStream;
+        QColor color=QColor("#e03131");
+        int width=3;
+        QVector<QLine> segments;
+    };
+    QVector<WhiteboardStroke> WhiteboardStrokes;
+    QString whiteboardActionStrokeId;
+
+    bool signalAuthed = false;
+    bool authRegisterTried = false;
+    QString loginUser;
+    QString loginPassword;
 };
 
 #endif // MAINWINDOW_H
+
