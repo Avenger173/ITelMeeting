@@ -26,6 +26,7 @@
 #include <QToolButton>
 #include <QSlider>
 #include <QSignalBlocker>
+#include <QSettings>
 #include <algorithm>
 #include<QHBoxLayout>
 #include<QTabWidget>
@@ -94,6 +95,7 @@ MainWindow::MainWindow(QWidget *parent)
     , timer(new QTimer(this))
 {
     ui->setupUi(this);
+    loadLoginPrefs();
     qInfo() << "[Build] SmartMeet" << __DATE__ << __TIME__;
 
     setWindowTitle("SmartMeet视频会议系统");
@@ -126,17 +128,23 @@ MainWindow::MainWindow(QWidget *parent)
     setupBottomMenus();
     setupRemoteGridUi();
     refreshRemoteTiles();
+    setupLoginUi();
+    showLoginOverlay(true, "请输入账号、密码和房间号后登录");
 }
 
 MainWindow::~MainWindow()
 {
     qDebug()<<"[MainWindow] 析构";
+    shuttingDown = true;
 
     on_stopMeetingButton_clicked();
     if(signalSocket){
+        disconnect(signalSocket, nullptr, this, nullptr);
+        signalSocket->close();
         delete signalSocket;
         signalSocket=nullptr;
     }
+    QCoreApplication::removePostedEvents(this);
 
     auto tmp=ui;
     ui=nullptr;
@@ -145,8 +153,20 @@ MainWindow::~MainWindow()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    if (shuttingDown) {
+        event->accept();
+        return;
+    }
+    shuttingDown = true;
     on_stopMeetingButton_clicked();
     QMainWindow::closeEvent(event);
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    syncRemoteContainerGeometry();
+    syncLoginOverlayGeometry();
 }
 
 void MainWindow::on_startMeetingButton_clicked()
@@ -428,6 +448,7 @@ void MainWindow::on_stopMeetingButton_clicked()
     focusMode = false;
     refreshRoomUserList();
     clearAllTileFrames();
+    latestRemoteFrames.clear();
     if (remoteStack && remoteGridPage) {
         remoteStack->setCurrentWidget(remoteGridPage);
     }
@@ -441,11 +462,25 @@ void MainWindow::on_stopMeetingButton_clicked()
 
 void MainWindow::on_captureImageButton_clicked()
 {
+    const QString filename = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") + ".jpg";
+
+    QImage remoteImg;
+    if (captureFocusedRemoteImage(&remoteImg)) {
+        if (remoteImg.save(filename, "JPG")) {
+            QMessageBox::information(this, "提示", "已保存照片：" + filename);
+        } else {
+            QMessageBox::warning(this, "错误", "保存照片失败：" + filename);
+        }
+        return;
+    }
+
     if (videoWorker) {
-        QString filename = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") + ".jpg";
         videoWorker->capturePhoto(filename);
         QMessageBox::information(this, "提示", "已保存照片：" + filename);
+        return;
     }
+
+    QMessageBox::warning(this, "提示", "当前没有可用画面可拍照");
 }
 
 
@@ -639,8 +674,7 @@ void MainWindow::setupWhiteboardUi()
     if(whiteboardLockButton){
         disconnect(whiteboardLockButton,&QToolButton::toggled,this,nullptr);
         connect(whiteboardLockButton,&QToolButton::toggled,this,[this](bool on){
-            const MemberState selfState=memberStates.value(selfStream);
-            const bool canManage=selfState.host||selfState.cohost||!signalConnected;
+            const bool canManage=canManageWhiteboard();
             if(!canManage){
                 QSignalBlocker guard(whiteboardLockButton);
                 whiteboardLockButton->setChecked(whiteboardLocked);
@@ -715,8 +749,7 @@ bool MainWindow::canClearWhiteboard() const
 {
     if(!signalConnected) return true;
     if(memberStates.isEmpty()) return true;
-    const MemberState st=memberStates.value(selfStream);
-    return st.host||st.cohost;
+    return canManageWhiteboard();
 }
 
 void MainWindow::redrawWhiteboardFromStrokes()
@@ -910,16 +943,25 @@ void MainWindow::sendSignalWhiteboardUndo(const QString &strokeId)
 
 bool MainWindow::canWriteWhiteboard() const
 {
-    if(!signalConnected) return true;
     if(!whiteboardLocked) return true;
+    if(!signalConnected) return true;
+    if(!roomHostStream.isEmpty()&&selfStream==roomHostStream) return true;
+    const MemberState st=memberStates.value(selfStream);
+    return st.host||st.cohost;
+}
+
+bool MainWindow::canManageWhiteboard() const
+{
+    if(!signalConnected) return true;
+    if(!roomHostStream.isEmpty()&&selfStream==roomHostStream) return true;
+    if(!memberStates.contains(selfStream)) return false;
     const MemberState st=memberStates.value(selfStream);
     return st.host||st.cohost;
 }
 
 void MainWindow::applyWhiteboardLockUi()
 {
-    const MemberState st=memberStates.value(selfStream);
-    const bool canManage=st.host||st.cohost||!signalConnected;
+    const bool canManage=canManageWhiteboard();
 
     if(whiteboardLockButton){
         QSignalBlocker guard(whiteboardLockButton);
@@ -934,6 +976,18 @@ void MainWindow::applyWhiteboardLockUi()
     if(whiteboardUndoButton){
         whiteboardUndoButton->setEnabled(canWrite);
     }
+}
+
+bool MainWindow::captureFocusedRemoteImage(QImage *outImage) const
+{
+    if(!outImage) return false;
+    QString target=focusedStream;
+    if(target.isEmpty()) target=currentRemoteStream;
+    if(target.isEmpty()) return false;
+    const auto it=latestRemoteFrames.constFind(target);
+    if(it==latestRemoteFrames.constEnd()||it->isNull()) return false;
+    *outImage=*it;
+    return !outImage->isNull();
 }
 
 void MainWindow::sendSignalWhiteboardLock(bool locked)
@@ -952,29 +1006,285 @@ void MainWindow::sendSignalWhiteboardLock(bool locked)
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
-bool MainWindow::ensureSignalCredential()
+void MainWindow::loadLoginPrefs()
 {
-    if (!loginUser.isEmpty() && !loginPassword.isEmpty()) {
-        if (userId.isEmpty()) userId = loginUser;
-        return true;
+    QSettings settings("SmartMeet", "SmartMeet");
+    const bool remember = settings.value("auth/remember_user", true).toBool();
+    const QString savedUser = settings.value("auth/last_user").toString().trimmed();
+    const QString savedRoom = settings.value("auth/last_room").toString().trimmed();
+
+    if (remember && !savedUser.isEmpty()) {
+        loginUser = savedUser;
+    }
+    if (!savedRoom.isEmpty()) {
+        roomId = savedRoom;
+    }
+}
+
+void MainWindow::saveLoginPrefs() const
+{
+    QSettings settings("SmartMeet", "SmartMeet");
+    const bool remember = rememberLoginCheck ? rememberLoginCheck->isChecked() : true;
+    settings.setValue("auth/remember_user", remember);
+    if (remember) {
+        settings.setValue("auth/last_user", loginUser);
+    } else {
+        settings.remove("auth/last_user");
+    }
+    settings.setValue("auth/last_room", roomId);
+}
+
+void MainWindow::setupLoginUi()
+{
+    if (!ui || !ui->centralwidget || loginOverlay) return;
+
+    loginOverlay = new QFrame(ui->centralwidget);
+    loginOverlay->setObjectName("loginOverlay");
+    loginOverlay->setStyleSheet(
+        "QFrame#loginOverlay{background:rgba(9,12,19,205);}"
+        "QFrame#loginCard{background:#1b2332;border:1px solid #34415a;border-radius:12px;}"
+        "QLabel#loginTitleLabel{color:#f0f4ff;font-size:20px;font-weight:700;}"
+        "QLabel#loginSubTitleLabel{color:#b8c4dc;font-size:13px;}"
+        "QLabel#loginHintLabel{color:#ffd27a;font-size:12px;}"
+        "QLineEdit#loginUserEdit,QLineEdit#loginPasswordEdit,QLineEdit#loginRoomEdit{"
+        "background:#111826;color:#eaf0ff;border:1px solid #3d4e6b;border-radius:6px;padding:7px 10px;min-height:30px;}"
+        "QPushButton#loginLoginButton{background:#2e86de;color:white;border:1px solid #4a9eee;border-radius:6px;padding:7px 14px;font-weight:700;}"
+        "QPushButton#loginRegisterButton{background:#2d3a52;color:#dce7ff;border:1px solid #4a5f84;border-radius:6px;padding:7px 14px;font-weight:700;}"
+        "QPushButton#loginLoginButton:hover{background:#3b92ea;}"
+        "QPushButton#loginRegisterButton:hover{background:#364765;}"
+    );
+    loginOverlay->setFrameShape(QFrame::NoFrame);
+    loginOverlay->setAttribute(Qt::WA_StyledBackground, true);
+
+    loginCard = new QFrame(loginOverlay);
+    loginCard->setObjectName("loginCard");
+    loginCard->setFrameShape(QFrame::StyledPanel);
+    loginCard->setAttribute(Qt::WA_StyledBackground, true);
+
+    auto *cardLayout = new QVBoxLayout(loginCard);
+    cardLayout->setContentsMargins(22, 22, 22, 22);
+    cardLayout->setSpacing(12);
+
+    auto *titleLabel = new QLabel("欢迎使用 SmartMeet", loginCard);
+    titleLabel->setObjectName("loginTitleLabel");
+    auto *subTitleLabel = new QLabel("登录后进入会议主界面", loginCard);
+    subTitleLabel->setObjectName("loginSubTitleLabel");
+
+    loginHintLabel = new QLabel(loginCard);
+    loginHintLabel->setObjectName("loginHintLabel");
+    loginHintLabel->setWordWrap(true);
+    loginHintLabel->setText("请输入账号、密码和房间号");
+
+    loginUserEdit = new QLineEdit(loginCard);
+    loginUserEdit->setObjectName("loginUserEdit");
+    loginUserEdit->setPlaceholderText("账号（例如：u1001）");
+    loginUserEdit->setClearButtonEnabled(true);
+
+    loginPasswordEdit = new QLineEdit(loginCard);
+    loginPasswordEdit->setObjectName("loginPasswordEdit");
+    loginPasswordEdit->setPlaceholderText("密码");
+    loginPasswordEdit->setEchoMode(QLineEdit::Password);
+    loginPasswordEdit->setClearButtonEnabled(true);
+
+    loginRoomEdit = new QLineEdit(loginCard);
+    loginRoomEdit->setObjectName("loginRoomEdit");
+    loginRoomEdit->setPlaceholderText("房间号（6位数字）");
+    loginRoomEdit->setClearButtonEnabled(true);
+
+    rememberLoginCheck = new QCheckBox("记住账号", loginCard);
+    const bool rememberUser = QSettings("SmartMeet", "SmartMeet").value("auth/remember_user", true).toBool();
+    rememberLoginCheck->setChecked(rememberUser);
+    rememberLoginCheck->setStyleSheet("QCheckBox{color:#c8d5ee;}");
+
+    if (loginUser.isEmpty()) {
+        loginUser = QString("u%1").arg(QRandomGenerator::global()->bounded(1000, 9999));
+    }
+    if (roomId.isEmpty()) {
+        roomId = QString::number(QRandomGenerator::global()->bounded(100000, 999999));
+    }
+    loginUserEdit->setText(loginUser);
+    loginRoomEdit->setText(roomId);
+
+    auto *buttonRow = new QHBoxLayout();
+    buttonRow->setSpacing(10);
+    loginLoginButton = new QPushButton("登录并进入", loginCard);
+    loginLoginButton->setObjectName("loginLoginButton");
+    loginRegisterButton = new QPushButton("注册并进入", loginCard);
+    loginRegisterButton->setObjectName("loginRegisterButton");
+    buttonRow->addWidget(loginLoginButton);
+    buttonRow->addWidget(loginRegisterButton);
+
+    cardLayout->addWidget(titleLabel);
+    cardLayout->addWidget(subTitleLabel);
+    cardLayout->addWidget(loginHintLabel);
+    cardLayout->addWidget(loginUserEdit);
+    cardLayout->addWidget(loginPasswordEdit);
+    cardLayout->addWidget(loginRoomEdit);
+    cardLayout->addWidget(rememberLoginCheck);
+    cardLayout->addLayout(buttonRow);
+
+    connect(loginLoginButton, &QPushButton::clicked, this, [this]() {
+        triggerLoginAction(false);
+    });
+    connect(loginRegisterButton, &QPushButton::clicked, this, [this]() {
+        triggerLoginAction(true);
+    });
+    connect(loginUserEdit, &QLineEdit::returnPressed, this, [this]() {
+        triggerLoginAction(false);
+    });
+    connect(loginPasswordEdit, &QLineEdit::returnPressed, this, [this]() {
+        triggerLoginAction(false);
+    });
+    connect(loginRoomEdit, &QLineEdit::returnPressed, this, [this]() {
+        triggerLoginAction(false);
+    });
+    connect(rememberLoginCheck, &QCheckBox::toggled, this, [this](bool){
+        saveLoginPrefs();
+    });
+
+    syncLoginOverlayGeometry();
+    loginOverlay->hide();
+}
+
+void MainWindow::syncLoginOverlayGeometry()
+{
+    if (!ui || !ui->centralwidget || !loginOverlay || !loginCard) return;
+
+    loginOverlay->setGeometry(ui->centralwidget->rect());
+
+    const int overlayW = loginOverlay->width();
+    const int overlayH = loginOverlay->height();
+    const int cardW = qBound(340, overlayW - 40, 460);
+    loginCard->setFixedWidth(cardW);
+    loginCard->adjustSize();
+
+    const int x = (overlayW - loginCard->width()) / 2;
+    const int y = qMax(20, (overlayH - loginCard->height()) / 2);
+    loginCard->move(x, y);
+
+    loginOverlay->raise();
+}
+
+void MainWindow::showLoginOverlay(bool show, const QString &hint)
+{
+    if (!loginOverlay) {
+        setupLoginUi();
+    }
+    if (!loginOverlay) return;
+
+    if (loginHintLabel) {
+        if (!hint.isEmpty()) loginHintLabel->setText(hint);
+    }
+    if (loginUserEdit && !loginUser.isEmpty()) {
+        loginUserEdit->setText(loginUser);
+    }
+    if (loginRoomEdit && !roomId.isEmpty()) {
+        loginRoomEdit->setText(roomId);
     }
 
-    bool ok = false;
-    const QString suggestUser = userId.isEmpty()
-                                    ? QString("u%1").arg(QRandomGenerator::global()->bounded(1000, 9999))
-                                    : userId;
+    loginOverlay->setVisible(show);
+    if (show) {
+        syncLoginOverlayGeometry();
+        if (loginPasswordEdit && loginPasswordEdit->text().isEmpty()) {
+            loginPasswordEdit->setFocus();
+        } else if (loginUserEdit) {
+            loginUserEdit->setFocus();
+            loginUserEdit->selectAll();
+        }
+    }
+}
 
-    const QString user = QInputDialog::getText(
-                             this, "登录账号", "账号：", QLineEdit::Normal, suggestUser, &ok).trimmed();
-    if (!ok || user.isEmpty()) return false;
+void MainWindow::triggerLoginAction(bool registerFirst)
+{
+    if (!loginUserEdit || !loginPasswordEdit || !loginRoomEdit) return;
 
-    const QString pwd = QInputDialog::getText(
-        this, "登录密码", "密码：", QLineEdit::Password, QString(), &ok);
-    if (!ok || pwd.isEmpty()) return false;
+    const QString user = loginUserEdit->text().trimmed();
+    const QString password = loginPasswordEdit->text();
+    const QString room = loginRoomEdit->text().trimmed();
+
+    if (user.isEmpty() || password.isEmpty() || room.isEmpty()) {
+        showLoginOverlay(true, "账号、密码、房间号都不能为空");
+        return;
+    }
 
     loginUser = user;
-    loginPassword = pwd;
+    loginPassword = password;
+    roomId = room;
     userId = loginUser;
+    saveLoginPrefs();
+    pendingAuthRegister = registerFirst;
+    signalAuthed = false;
+    authRegisterTried = registerFirst;
+
+    if (signalConnected) {
+        showLoginOverlay(true, registerFirst ? "正在注册并登录..." : "正在登录...");
+        if (registerFirst) sendSignalAuthRegister();
+        else sendSignalAuthLogin();
+        return;
+    }
+
+    showLoginOverlay(true, registerFirst ? "正在连接并注册..." : "正在连接并登录...");
+    on_startReceiveButton_clicked();
+}
+
+void MainWindow::on_logoutButton_clicked()
+{
+    appendRoomEvent("手动退出登录");
+
+    if (signalSocket &&
+        (signalSocket->state() == QAbstractSocket::ConnectedState
+         || signalSocket->state() == QAbstractSocket::ConnectingState)) {
+        if (signalConnected) {
+            sendSignalLeave();
+        }
+        signalSocket->close();
+    }
+
+    signalAuthed = false;
+    pendingAuthRegister = false;
+    authRegisterTried = false;
+    signalConnected = false;
+    loginPassword.clear();
+    userId.clear();
+    selfStream.clear();
+
+    if (rememberLoginCheck && !rememberLoginCheck->isChecked()) {
+        loginUser.clear();
+    }
+    saveLoginPrefs();
+
+    if (loginPasswordEdit) loginPasswordEdit->clear();
+    if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
+    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
+        signalBadgeLabel->setText("信令离线");
+    }
+    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
+
+    showLoginOverlay(true, "已退出登录，请重新登录");
+}
+
+bool MainWindow::ensureSignalCredential()
+{
+    if (loginUser.isEmpty() && loginUserEdit) {
+        loginUser = loginUserEdit->text().trimmed();
+    }
+    if (loginPassword.isEmpty() && loginPasswordEdit) {
+        loginPassword = loginPasswordEdit->text();
+    }
+    if (roomId.isEmpty() && loginRoomEdit) {
+        roomId = loginRoomEdit->text().trimmed();
+    }
+
+    if (loginUser.isEmpty() || loginPassword.isEmpty()) {
+        showLoginOverlay(true, "请先登录后再连接信令");
+        return false;
+    }
+    if (roomId.isEmpty()) {
+        showLoginOverlay(true, "请填写房间号");
+        return false;
+    }
+
+    if (userId.isEmpty()) userId = loginUser;
     return true;
 }
 
@@ -1249,6 +1559,9 @@ void MainWindow::on_startReceiveButton_clicked()
         }
         return;
     }
+    if (this->QObject::sender() == ui->startReceiveButton) {
+        pendingAuthRegister = false;
+    }
     if (!ensureSignalCredential()) {
         return;
     }
@@ -1495,8 +1808,6 @@ void MainWindow::setupBottomMenus()//聊天面板入口
             }
             if (chatInputEdit) chatInputEdit->setFocus();
         });
-        auto *participants = moreMenu->addAction("成员管理（待实现）");
-        participants->setEnabled(false);
         moreMenu->addSeparator();
         selfMicToggleAction = moreMenu->addAction("静音我自己");
         selfCamToggleAction = moreMenu->addAction("关闭我的摄像头");
@@ -1551,16 +1862,21 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     }
 
     if(watched==whiteboardCanvasLabel){
+        if(event->type()==QEvent::Show||event->type()==QEvent::Resize){
+            ensureWhiteboardCanvas();
+            return false;
+        }
 
         if(!canWriteWhiteboard()){
             if(event->type()==QEvent::MouseButtonPress){
                 appendRoomEvent("白板已锁定,仅主持人/联席主持人可书写");
             }
-            return true;
-        }
-
-        if(event->type()==QEvent::Show||event->type()==QEvent::Resize){
-            ensureWhiteboardCanvas();
+            if(event->type()==QEvent::MouseButtonPress
+                || event->type()==QEvent::MouseButtonRelease
+                || event->type()==QEvent::MouseMove
+                || event->type()==QEvent::MouseButtonDblClick){
+                return true;
+            }
             return false;
         }
 
@@ -1948,18 +2264,14 @@ void MainWindow::updateFocusStatusBadge()
 
 bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
 {
+    if (roomId.isEmpty() && loginRoomEdit) {
+        roomId = loginRoomEdit->text().trimmed();
+    }
     if (askRoomIfEmpty && roomId.isEmpty()) {
-        bool ok = false;
-        QString suggest = roomId;
-        if (suggest.isEmpty()) {
-            suggest = QString::number(QRandomGenerator::global()->bounded(100000, 999999));
-        }
-        const QString input = QInputDialog::getText(
-            this, "输入房间号", "房间号：", QLineEdit::Normal, suggest, &ok
-        ).trimmed();
-        if (!ok || input.isEmpty()) return false;
-        roomId = input;
-    } else if (roomId.isEmpty()) {
+        showLoginOverlay(true, "请先输入房间号后再连接信令");
+        return false;
+    }
+    if (roomId.isEmpty()) {
         roomId = QString::number(QRandomGenerator::global()->bounded(100000, 999999));
     }
     if (userId.isEmpty()) {
@@ -2095,6 +2407,7 @@ void MainWindow::refreshRoomUserList()
     if (roomCountLabel) {
         roomCountLabel->setText(QString("在线: %1").arg(streams.size()));
     }
+    applyWhiteboardLockUi();
     refreshRemoteTiles();
     syncGridPullers();
 }
@@ -2280,16 +2593,21 @@ void MainWindow::appendChatMessage(const QString &fromStream, const QString &con
 
 void MainWindow::onSignalConnected()
 {
+    if (shuttingDown) return;
     signalConnected = true;
     signalAuthed = false;
-    authRegisterTried = false;
+    authRegisterTried = pendingAuthRegister;
     if (signalStateLabel) signalStateLabel->setText("信令: 已连接");
     if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
         signalBadgeLabel->setText("信令在线");
     }
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
-    appendRoomEvent("信令已连接，正在登录...");
-    sendSignalAuthLogin();
+    appendRoomEvent(pendingAuthRegister ? "信令已连接，正在注册..." : "信令已连接，正在登录...");
+    if (pendingAuthRegister) {
+        sendSignalAuthRegister();
+    } else {
+        sendSignalAuthLogin();
+    }
     refreshSelfControlActions();
 }
 
@@ -2298,6 +2616,7 @@ void MainWindow::onSignalDisconnected()
     signalAuthed = false;
     authRegisterTried = false;
     signalConnected = false;
+    if (shuttingDown) return;
     if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
     if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
         signalBadgeLabel->setText("信令离线");
@@ -2329,6 +2648,7 @@ void MainWindow::onSignalDisconnected()
 
 void MainWindow::onSignalTextMessage(const QString &msg)
 {
+    if (shuttingDown) return;
     QJsonParseError err;
     const QJsonDocument doc = QJsonDocument::fromJson(msg.toUtf8(), &err);
     if (err.error != QJsonParseError::NoError || !doc.isObject()) return;
@@ -2338,15 +2658,18 @@ void MainWindow::onSignalTextMessage(const QString &msg)
     if (type == "auth_ok") {
         signalAuthed = true;
         authRegisterTried = false;
+        pendingAuthRegister = false;
         loginUser = obj.value("user").toString(loginUser);
         if (!loginUser.isEmpty()) userId = loginUser;
         appendRoomEvent(QString("登录成功: %1").arg(loginUser));
+        showLoginOverlay(false);
         sendSignalJoin();
         return;
     }
 
     if (type == "auth_registered") {
         appendRoomEvent("账号注册成功，正在登录...");
+        pendingAuthRegister = false;
         sendSignalAuthLogin();
         return;
     }
@@ -2355,22 +2678,30 @@ void MainWindow::onSignalTextMessage(const QString &msg)
         const QString code = obj.value("code").toString();
         const QString msgText = obj.value("msg").toString("登录失败");
         appendRoomEvent(QString("登录失败[%1]: %2").arg(code, msgText));
-
-        if (code == "no_user" && !authRegisterTried) {
-            authRegisterTried = true;
-            if (QMessageBox::question(this, "注册账号", "账号不存在，是否自动注册并登录？")
-                == QMessageBox::Yes) {
-                sendSignalAuthRegister();
-                return;
-            }
+        pendingAuthRegister = false;
+        signalAuthed = false;
+        QString hint;
+        if (code == "no_user") {
+            hint = "账号不存在，请点击“注册并进入”";
+        } else if (code == "bad_password") {
+            hint = "密码错误，请检查后重试";
+        } else if (code == "exists") {
+            hint = "账号已存在，请点击“登录并进入”";
+        } else if (code == "bad_args") {
+            hint = "账号或密码格式不正确";
+        } else if (code == "db_error") {
+            hint = "服务端数据库异常，请稍后重试";
+        } else {
+            hint = QString("登录失败：%1").arg(msgText);
         }
-        if (signalSocket) signalSocket->close();
+        showLoginOverlay(true, hint);
         return;
     }
 
     if (type == "auth_required") {
         signalAuthed = false;
         appendRoomEvent("服务端要求先登录");
+        showLoginOverlay(true, "服务端要求先登录");
         return;
     }
 
@@ -2820,14 +3151,32 @@ void MainWindow::ensurePullSession(const QString &stream)
     pullSessions.insert(stream, sess);
 
     connect(sess->puller, &rtmppuller::finished, sess->thread, &QThread::quit, Qt::QueuedConnection);
-    connect(sess->thread, &QThread::finished, sess->puller, &QObject::deleteLater, Qt::QueuedConnection);
     connect(sess->puller, &rtmppuller::videoFrameReady, this, [this, stream](const QImage &img) {
+        latestRemoteFrames.insert(stream, img);
         applyTileFrame(stream, img);
         if (focusMode && focusedStream == stream && ui && ui->remoteVideolabel) {
             ui->remoteVideolabel->setPixmap(
                 QPixmap::fromImage(img).scaled(ui->remoteVideolabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)
             );
         }
+        if (camRecording && recorder && recorder->isOpen()) {
+            const bool useRemoteRecord = (!isPublishing || !videoWorker);
+            if (useRemoteRecord && focusMode && focusedStream == stream) {
+                recorder->pushVideoFrame(img);
+            }
+        }
+    });
+    connect(sess->puller, &rtmppuller::audioPcmReady, this, [this, stream](const QByteArray &pcm, int sampleRate, int channels) {
+        Q_UNUSED(sampleRate);
+        Q_UNUSED(channels);
+        if (!(camRecording && recorder && recorder->isOpen())) return;
+        const bool useRemoteRecord = (!isPublishing || !audioWorker);
+        if (!useRemoteRecord) return;
+        if (!(focusMode && focusedStream == stream)) return;
+        if (pcm.isEmpty()) return;
+        const int nbSamples = pcm.size() / 2; // mono s16
+        if (nbSamples <= 0) return;
+        recorder->pushAudioPCM(reinterpret_cast<const uint8_t*>(pcm.constData()), nbSamples);
     });
     connect(sess->puller, &rtmppuller::errorOccurred, this, [this, stream](const QString &e) {
         PullSession *s = pullSessions.value(stream, nullptr);
@@ -2863,30 +3212,37 @@ void MainWindow::stopPullSession(const QString &stream, bool waitForQuit)
     PullSession *sess = pullSessions.value(stream, nullptr);
     if (!sess) return;
 
+    latestRemoteFrames.remove(stream);
     if (sess->puller) {
         disconnect(sess->puller, nullptr, this, nullptr);
         sess->puller->stop();
     }
+
+    bool threadStopped = true;
     if (sess->thread) {
         sess->thread->quit();
-        if (waitForQuit) {
-            if (!sess->thread->wait(2500)) {
-                qWarning() << "[RtmpPuller]" << stream << "stop wait timeout, detach";
-                sess->thread->requestInterruption();
-                sess->thread->setParent(nullptr);
-                QObject::connect(sess->thread, &QThread::finished, sess->thread, &QObject::deleteLater, Qt::UniqueConnection);
-            } else {
-                delete sess->thread;
+        int waitMs = waitForQuit ? 2500 : 200;
+        threadStopped = sess->thread->wait(waitMs);
+        if (!threadStopped) {
+            qWarning() << "[RtmpPuller]" << stream << "stop wait timeout, detach";
+            sess->thread->requestInterruption();
+            if (sess->puller) {
+                QObject::connect(sess->thread, &QThread::finished, sess->puller, &QObject::deleteLater, Qt::UniqueConnection);
             }
+            sess->thread->setParent(nullptr);
+            QObject::connect(sess->thread, &QThread::finished, sess->thread, &QObject::deleteLater, Qt::UniqueConnection);
         } else {
-            if (!sess->thread->wait(200)) {
-                sess->thread->requestInterruption();
-                sess->thread->setParent(nullptr);
-                QObject::connect(sess->thread, &QThread::finished, sess->thread, &QObject::deleteLater, Qt::UniqueConnection);
-            } else {
-                delete sess->thread;
-            }
+            delete sess->thread;
         }
+        sess->thread = nullptr;
+    }
+
+    // 仅在线程确认结束后同步销毁 puller；否则交由 finished->deleteLater 释放
+    if (threadStopped && sess->puller) {
+        delete sess->puller;
+        sess->puller = nullptr;
+    } else if (!threadStopped) {
+        sess->puller = nullptr;
     }
 
     pullSessions.remove(stream);

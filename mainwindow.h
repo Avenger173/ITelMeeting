@@ -20,6 +20,7 @@
 #include <QToolButton>
 #include <QPlainTextEdit>
 #include <QLabel>
+#include <QImage>
 #include <QFrame>
 #include <QStackedLayout>
 #include <QVector>
@@ -31,6 +32,8 @@
 #include <QSpinBox>
 #include <QSlider>
 #include <QLine>
+#include <QLineEdit>
+#include <QCheckBox>
 
 #include "videocapture.h"
 #include "audiocapture.h"
@@ -66,6 +69,7 @@ public:
     ~MainWindow();
     bool eventFilter(QObject *watched, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void on_startMeetingButton_clicked();
@@ -85,6 +89,7 @@ private slots:
     void onDebugStopAVRecord();
 
     void on_startReceiveButton_clicked();
+    void on_logoutButton_clicked();
     void on_stopMeetingButton_clicked();
 
     void onSignalConnected();
@@ -175,12 +180,20 @@ private:
     void sendSignalWhiteboardUndo(const QString &strokeId);
 
     bool canWriteWhiteboard() const;
+    bool canManageWhiteboard() const;
     void applyWhiteboardLockUi();
     void sendSignalWhiteboardLock(bool locked);
+    bool captureFocusedRemoteImage(QImage *outImage) const;
 
     bool ensureSignalCredential();
     void sendSignalAuthLogin();
     void sendSignalAuthRegister();
+    void setupLoginUi();
+    void syncLoginOverlayGeometry();
+    void showLoginOverlay(bool show, const QString &hint = QString());
+    void triggerLoginAction(bool registerFirst);
+    void loadLoginPrefs();
+    void saveLoginPrefs() const;
 private:
     Ui::MainWindow *ui = nullptr;
     QTimer *timer = nullptr;
@@ -234,6 +247,7 @@ private:
     bool localAudioOn = true;
     bool localVideoOn = true;
     bool isPublishing = false;
+    bool shuttingDown = false;
 
     QHash<QString, MemberState> memberStates;
     QString preferredRemoteStream;
@@ -271,6 +285,7 @@ private:
     QLabel *focusStatusLabel = nullptr;
     QVector<RemoteTile> remoteTiles;
     QHash<QString, int> streamToTile;
+    QHash<QString, QImage> latestRemoteFrames;
     QString focusedStream;
     bool focusMode = false;
     bool localScreenShareOn=false;
@@ -316,6 +331,16 @@ private:
     bool authRegisterTried = false;
     QString loginUser;
     QString loginPassword;
+    bool pendingAuthRegister = false;
+    QFrame *loginOverlay = nullptr;
+    QFrame *loginCard = nullptr;
+    QLineEdit *loginUserEdit = nullptr;
+    QLineEdit *loginPasswordEdit = nullptr;
+    QLineEdit *loginRoomEdit = nullptr;
+    QPushButton *loginLoginButton = nullptr;
+    QPushButton *loginRegisterButton = nullptr;
+    QLabel *loginHintLabel = nullptr;
+    QCheckBox *rememberLoginCheck = nullptr;
 };
 
 #endif // MAINWINDOW_H

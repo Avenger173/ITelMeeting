@@ -29,6 +29,7 @@ public slots:
     void setAudioEnabled(bool enabled);
 signals:
     void videoFrameReady(const QImage& img);
+    void audioPcmReady(const QByteArray &pcm, int sampleRate, int channels);
     void errorOccurred(const QString& err);
     void finished();
 private:
@@ -47,6 +48,7 @@ private:
     void cleanup();
     AVCodecContext* aDecCtx=nullptr;
     SwrContext* aswr=nullptr;
+    SwrContext* recSwr_=nullptr;
     AVFrame* aFrame=nullptr;
     int aStream=-1;
     QAudioSink* audioSink_=nullptr;

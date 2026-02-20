@@ -162,7 +162,7 @@ M4 验收标准：
 - 密码安全存储（哈希，不明文）。
 - 基础角色模型：普通成员/主持人/管理员。
 - 会议记录归档：房间号、起止时间、成员列表。
-- 面试版云端部署基线：**1 台 Linux 云服务器部署 ZLMediaKit + signal 服务 + SQLite 数据文件**。
+- 最小事件归档（已落地）：`meeting_events` 表记录 `join/leave/publish_start/publish_stop/mute/kick/share_on/share_off/set_host/set_cohost`。
 - 数据库策略：先用 SQLite 跑通上线；代码层预留 `QSQLITE/QMYSQL` 可切换接口，后续再迁移 MySQL。
 
 功能清单（可延期到 M5.1）：
@@ -187,6 +187,7 @@ M5 验收标准：
   - 人脸 ROI 处理（避免全帧重算）；
   - 帧间平滑与参数防抖（避免画面闪烁）；
   - 在弱网与高负载下自动降级美颜强度（优先保通话稳定）。
+  - 面试版云端部署基线：**1 台 Linux 云服务器部署 ZLMediaKit + signal 服务 + SQLite 数据文件**。
 
 M6 验收标准：
 - 连续运行 30 分钟无崩溃。

@@ -172,6 +172,20 @@ void rtmppuller::startPull(const QString &url) {
                                     0, nullptr);
                 swr_init(aswr);
                 av_channel_layout_uninit(&outLayout);
+
+                // 录制分支固定输出为 44.1kHz/mono/S16，供 AvRecorder::pushAudioPCM 使用
+                AVChannelLayout recLayout;
+                av_channel_layout_default(&recLayout, 1);
+                recSwr_ = swr_alloc();
+                if (recSwr_) {
+                    if (swr_alloc_set_opts2(&recSwr_,
+                                            &recLayout, AV_SAMPLE_FMT_S16, 44100,
+                                            &aDecCtx->ch_layout, aDecCtx->sample_fmt, aDecCtx->sample_rate,
+                                            0, nullptr) < 0 || swr_init(recSwr_) < 0) {
+                        swr_free(&recSwr_);
+                    }
+                }
+                av_channel_layout_uninit(&recLayout);
             }
         }
     }
@@ -241,6 +255,19 @@ void rtmppuller::startPull(const QString &url) {
                             flushAudioPending_();
                         }
                     }
+
+                    if (recSwr_) {
+                        const int recSamples = swr_get_out_samples(recSwr_, aFrame->nb_samples);
+                        if (recSamples > 0) {
+                            QByteArray recBuf(recSamples * 2, 0); // mono s16
+                            uint8_t *recData[1] = { reinterpret_cast<uint8_t*>(recBuf.data()) };
+                            const int recConverted = swr_convert(recSwr_, recData, recSamples, inData, aFrame->nb_samples);
+                            if (recConverted > 0) {
+                                recBuf.resize(recConverted * 2);
+                                emit audioPcmReady(recBuf, 44100, 1);
+                            }
+                        }
+                    }
                     av_frame_unref(aFrame);
                 }
             }
@@ -267,7 +294,8 @@ void rtmppuller::startPull(const QString &url) {
 
             QImage img(vDecCtx->width, vDecCtx->height, QImage::Format_RGB888);
             for (int y = 0; y < vDecCtx->height; ++y) {
-                memcpy(img.scanLine(y), rgbFrame->data[0] + y * rgbFrame->linesize[0], static_cast<size_t>(vDecCtx->width) * 3);
+                const int copyBytes = qMin(img.bytesPerLine(), rgbFrame->linesize[0]);
+                memcpy(img.scanLine(y), rgbFrame->data[0] + y * rgbFrame->linesize[0], static_cast<size_t>(copyBytes));
             }
 
             if (!loggedFirstFrame) {
@@ -332,6 +360,10 @@ void rtmppuller::cleanup() {
     if (aswr) {
         swr_free(&aswr);
         aswr = nullptr;
+    }
+    if (recSwr_) {
+        swr_free(&recSwr_);
+        recSwr_ = nullptr;
     }
     if (audioSink_) {
         audioSink_->stop();

@@ -270,6 +270,7 @@ QLabel#localHintBody{color:#aeb8cb;}</string>
 QPushButton,QToolButton{background:#2f3b52;color:#eef3ff;border:1px solid #465778;border-radius:6px;padding:4px 10px;font-weight:600;min-height:24px;}
 QPushButton:hover,QToolButton:hover{background:#394661;}
 QPushButton#startReceiveButton{background:#3a4963;border-color:#536788;}
+QPushButton#logoutButton{background:#6a3a3a;border-color:#8a5252;}
 QPushButton#startMeetingButton{background:#2e86de;border-color:#4b9aea;}
 QPushButton#stopMeetingButton{background:#d64545;border-color:#e86b6b;}
 QPushButton#startRecordButton{background:#2f6f45;border-color:#4e9366;}
@@ -300,15 +301,22 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
        <property name="bottomMargin">
         <number>6</number>
        </property>
-       <item>
-        <widget class="QPushButton" name="startReceiveButton">
-         <property name="text">
-          <string>连接信令</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QFrame" name="ctrlSep1">
+        <item>
+         <widget class="QPushButton" name="startReceiveButton">
+          <property name="text">
+           <string>连接信令</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="logoutButton">
+          <property name="text">
+           <string>退出登录</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QFrame" name="ctrlSep1">
          <property name="frameShape">
           <enum>QFrame::Shape::VLine</enum>
          </property>
