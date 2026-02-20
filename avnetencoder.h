@@ -20,7 +20,7 @@ public:
     explicit AvNetEncoder(QObject *parent = nullptr);
     ~AvNetEncoder();
 
-    bool openVideo(int w,int h,int fps);
+    bool openVideo(int w,int h,int fps,int bitrate = 2200000);
     void close();
 
 public slots:
@@ -35,6 +35,7 @@ private:
     AVPacket* pkt_=nullptr;
 
     int w_=0,h_=0,fps_=30;
+    int bitrate_=2200000;
     int64_t vFrameIndex_=0;
     QElapsedTimer vClock_;
     bool vClockStarted_=false;

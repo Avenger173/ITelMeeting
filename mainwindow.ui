@@ -32,11 +32,12 @@
     </property>
     <item>
      <widget class="QFrame" name="topBarFrame">
-      <property name="styleSheet">
-       <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
+       <property name="styleSheet">
+        <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
 QLabel#meetingTitleLabel{color:#f5f7fb;font-size:16px;font-weight:700;}
-QLabel#meetingCodeLabel,QLabel#signalBadgeLabel,QLabel#shareBadgeLabel{color:#d5deed;background:#2a3140;padding:4px 8px;border-radius:6px;}</string>
-      </property>
+QLabel#meetingCodeLabel,QLabel#signalBadgeLabel,QLabel#shareBadgeLabel,QLabel#meetingStatsLabel{color:#d5deed;background:#2a3140;padding:4px 8px;border-radius:6px;}
+QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
+       </property>
       <property name="frameShape">
        <enum>QFrame::Shape::StyledPanel</enum>
       </property>
@@ -87,15 +88,22 @@ QLabel#meetingCodeLabel,QLabel#signalBadgeLabel,QLabel#shareBadgeLabel{color:#d5
          </property>
         </widget>
        </item>
-       <item>
-        <widget class="QLabel" name="shareBadgeLabel">
-         <property name="text">
-          <string>共享: 关</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
+        <item>
+         <widget class="QLabel" name="shareBadgeLabel">
+          <property name="text">
+           <string>共享: 关</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="meetingStatsLabel">
+          <property name="text">
+           <string>未推流 | 档位:-- | -- | -- | 重连:信令0 拉流0</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
     </item>
     <item>
      <layout class="QHBoxLayout" name="contentLayout">

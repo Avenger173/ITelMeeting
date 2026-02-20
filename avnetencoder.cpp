@@ -11,12 +11,13 @@ AvNetEncoder::~AvNetEncoder()
     close();
 }
 
-bool AvNetEncoder::openVideo(int w, int h, int fps)
+bool AvNetEncoder::openVideo(int w, int h, int fps, int bitrate)
 {
     if(opened_) return true;
     w_=w;
     h_=h;
     fps_=fps>0?fps:30;
+    bitrate_ = bitrate > 0 ? bitrate : 2200000;
 
     vCodec_=avcodec_find_encoder_by_name("libx264");
     if(!vCodec_) vCodec_=avcodec_find_encoder(AV_CODEC_ID_H264);
@@ -32,7 +33,7 @@ bool AvNetEncoder::openVideo(int w, int h, int fps)
     vCtx_->pix_fmt=AV_PIX_FMT_YUV420P;
     vCtx_->time_base=AVRational{1,1000};
     vCtx_->framerate=AVRational{fps_,1};
-    vCtx_->bit_rate=2200000;
+    vCtx_->bit_rate=bitrate_;
     const int gop=qMax(1,fps_);
     vCtx_->gop_size=gop;
     vCtx_->max_b_frames=0;//实时禁言B帧

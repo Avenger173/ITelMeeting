@@ -79,6 +79,7 @@ private:
     Q_DISABLE_COPY(RtmpPusher)
     QMutex writeMtx_;
 signals:
+    void writeError(const QString &err, bool videoPacket);
 };
 
 #endif // RTMPPUSHER_H

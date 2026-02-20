@@ -130,16 +130,23 @@ QSize VideoCapture::frameSize() const
 
 void VideoCapture::captureLoop()
 {
-    // 约 30fps 发送节流
+    // 输出节流（默认 30fps，可动态调整）
     qint64 lastSend = 0;
 
     while (running) {
         QImage img;
         CaptureMode mode = CaptureMode::Camera;
 
+        int fpsHint = 30;
+        int shareMaxW = 1920;
+        int shareMaxH = 1080;
+
         {
             QMutexLocker locker(&mutex);
             mode = captureMode;
+            fpsHint = std::clamp(targetFps, 8, 30);
+            shareMaxW = std::max(640, shareMaxWidth);
+            shareMaxH = std::max(360, shareMaxHeight);
         }
 
         if (mode == CaptureMode::Camera) {
@@ -234,8 +241,8 @@ void VideoCapture::captureLoop()
             img = shot.toImage().convertToFormat(QImage::Format_RGB888);
 
             // 限制共享源上限分辨率，降低编码压力
-            if (img.width() > 1920 || img.height() > 1080) {
-                img = img.scaled(1920, 1080, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            if (img.width() > shareMaxW || img.height() > shareMaxH) {
+                img = img.scaled(shareMaxW, shareMaxH, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
         }
 
@@ -250,7 +257,8 @@ void VideoCapture::captureLoop()
         }
 
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        if (now - lastSend < 33) {
+        const int minIntervalMs = std::max(1, 1000 / fpsHint);
+        if (now - lastSend < minIntervalMs) {
             QThread::msleep(1);
             continue;
         }
@@ -538,6 +546,19 @@ void VideoCapture::setShareTarget(int screenIndex, quint64 windowId)
     QMutexLocker locker(&mutex);
     shareScreenIndex = std::max(0, screenIndex);
     shareWindowId = windowId;
+}
+
+void VideoCapture::setTargetFps(int fps)
+{
+    QMutexLocker locker(&mutex);
+    targetFps = std::clamp(fps, 8, 30);
+}
+
+void VideoCapture::setShareMaxSize(int maxW, int maxH)
+{
+    QMutexLocker locker(&mutex);
+    shareMaxWidth = std::max(640, maxW);
+    shareMaxHeight = std::max(360, maxH);
 }
 
 void VideoCapture::setBeautyEnabled(bool on)

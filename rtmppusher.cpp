@@ -210,6 +210,7 @@ void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
         char err[128];
         av_strerror(r,err,sizeof(err));
         qWarning()<<"[RtmpPusher] write video failed:"<<err;
+        emit writeError(QString::fromUtf8(err), true);
     }
 }
 
@@ -250,6 +251,7 @@ void RtmpPusher::pushEncodeAudio(const QByteArray &pktData, quint32 pts_ms)
         char err[128];
         av_strerror(r,err,sizeof(err));
         qWarning()<<"[RtmpPusher] write audio failed:"<<err;
+        emit writeError(QString::fromUtf8(err), false);
     }
 }
 

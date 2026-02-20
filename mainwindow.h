@@ -34,6 +34,7 @@
 #include <QLine>
 #include <QLineEdit>
 #include <QCheckBox>
+#include <QQueue>
 
 #include "videocapture.h"
 #include "audiocapture.h"
@@ -148,6 +149,13 @@ private:
     void stopAllPullSessions(bool waitForQuit = true);
     void applyFocusAudioRouting();
     QStringList currentDisplayStreams() const;
+    void setupAdaptiveNetworkControl();
+    void applyAdaptiveProfile(int level, bool restartPipeline);
+    void handleNetworkIssue(const QString &reason, int weight = 1);
+    void tryRecoverAdaptiveProfile();
+    void setupMeetingStatsUi();
+    void updateMeetingStatsUi();
+    void exportRecentMeetingLogs();
 
     void startPullStream(const QString &stream);
     void stopCurrentPull(bool waitForQuit = true);
@@ -233,6 +241,22 @@ private:
     };
     QHash<QString, PullSession*> pullSessions;
 
+    struct PublishProfile {
+        QString name;
+        int width = 1280;
+        int height = 720;
+        int fps = 30;
+        int bitrate = 2200000;
+        int shareMaxW = 1920;
+        int shareMaxH = 1080;
+    };
+    int adaptiveProfileLevel = 0;
+    int adaptiveStressScore = 0;
+    qint64 lastAdaptiveIssueMs = 0;
+    qint64 lastAdaptiveLogMs = 0;
+    QTimer *adaptiveRecoverTimer = nullptr;
+    QString currentPushUrl;
+
     QThread *encThread = nullptr;
     QThread *audioEncThread = nullptr;
     QThread *pushThread = nullptr;
@@ -266,6 +290,7 @@ private:
     QPushButton *connectSignalButton = nullptr;
     QLabel *signalStateLabel = nullptr;
     QLabel *roomCountLabel = nullptr;
+    QLabel *meetingStatsLabel = nullptr;
     QListWidget *roomUserList = nullptr;
     QPlainTextEdit *roomEventLog = nullptr;
     QPlainTextEdit *chatMessageLog = nullptr;
@@ -349,6 +374,11 @@ private:
     QPushButton *loginRegisterButton = nullptr;
     QLabel *loginHintLabel = nullptr;
     QCheckBox *rememberLoginCheck = nullptr;
+
+    QQueue<QString> recentEventLogs;
+    int totalSignalReconnectCount = 0;
+    int totalPullRetryCount = 0;
+    QTimer *meetingStatsTimer = nullptr;
 };
 
 #endif // MAINWINDOW_H

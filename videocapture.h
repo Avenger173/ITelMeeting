@@ -33,6 +33,8 @@ public slots:
     void captureLoop();
     void setCaptureMode(int mode); // 0: camera, 1: screen
     void setShareTarget(int screenIndex, quint64 windowId); // 共享目标: 屏幕/窗口
+    void setTargetFps(int fps); // 输出节流帧率
+    void setShareMaxSize(int maxW, int maxH); // 共享上限分辨率
     void setBeautyEnabled(bool on);
     void setBeautyLevel(int level); // 0~100
     void setBeautyStyle(int style); // 0关 1自然 2清晰 3柔和 4磨皮 5瘦脸 6祛皱
@@ -51,6 +53,9 @@ private:
     CaptureMode captureMode = CaptureMode::Camera;
     int shareScreenIndex = 0;
     quint64 shareWindowId = 0;
+    int targetFps = 30;
+    int shareMaxWidth = 1920;
+    int shareMaxHeight = 1080;
 
     bool beautyEnabled = false;
     int beautyLevel = 0;

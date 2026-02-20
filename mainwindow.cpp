@@ -27,6 +27,11 @@
 #include <QSlider>
 #include <QSignalBlocker>
 #include <QSettings>
+#include <QFileDialog>
+#include <QTextStream>
+#include <QStringConverter>
+#include <QDir>
+#include <QStatusBar>
 #include <algorithm>
 #include<QHBoxLayout>
 #include<QTabWidget>
@@ -128,6 +133,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupBottomMenus();
     setupRemoteGridUi();
     refreshRemoteTiles();
+    setupMeetingStatsUi();
     setupLoginUi();
 
     signalReconnectTimer = new QTimer(this);
@@ -139,6 +145,7 @@ MainWindow::MainWindow(QWidget *parent)
         if (!ensureRoomIdentity(false)) return;
         openSignalConnection();
     });
+    setupAdaptiveNetworkControl();
 
     showLoginOverlay(true, "请输入账号、密码和房间号后登录");
 }
@@ -187,6 +194,15 @@ void MainWindow::on_startMeetingButton_clicked()
     audioStopped = false;
     localAudioOn = true;
     localVideoOn = true;
+    // 设为未初始化，保证本次会议首次应用策略时也会输出档位日志
+    adaptiveProfileLevel = -1;
+    adaptiveStressScore = 0;
+    lastAdaptiveIssueMs = 0;
+    lastAdaptiveLogMs = 0;
+    totalSignalReconnectCount = 0;
+    totalPullRetryCount = 0;
+    recentEventLogs.clear();
+    updateMeetingStatsUi();
     refreshSelfControlActions();
 
     if (videoWorker || videoThread) {
@@ -199,6 +215,7 @@ void MainWindow::on_startMeetingButton_clicked()
         return;
     }
     appendRoomEvent(QString("房间: %1 用户流: %2").arg(roomId, selfStream));
+    currentPushUrl = QString("rtmp://127.0.0.1/live/%1").arg(selfStream);
 
     if (!videoWorker) {
         videoWorker = new VideoCapture;
@@ -261,6 +278,10 @@ void MainWindow::on_startMeetingButton_clicked()
         pusher = new RtmpPusher(nullptr);
         pusher->moveToThread(pushThread);
         connect(pushThread, &QThread::finished, pusher, &QObject::deleteLater, Qt::UniqueConnection);
+        connect(pusher, &RtmpPusher::writeError, this, [this](const QString &err, bool videoPacket) {
+            const int w = videoPacket ? 2 : 1;
+            handleNetworkIssue(QString("推流写包异常: %1").arg(err), w);
+        });
     }
 
     if (!netEnc) {
@@ -276,6 +297,25 @@ void MainWindow::on_startMeetingButton_clicked()
 
     if (!audioWorker) startAudioCapture();
 
+    // 启动会议时先应用默认档位（高清）
+    applyAdaptiveProfile(0, false);
+
+    int targetW = 1280;
+    int targetH = 720;
+    int targetFps = 30;
+    int targetBitrate = 2200000;
+    if (adaptiveProfileLevel == 1) {
+        targetW = 960;
+        targetH = 540;
+        targetFps = 24;
+        targetBitrate = 1400000;
+    } else if (adaptiveProfileLevel >= 2) {
+        targetW = 640;
+        targetH = 360;
+        targetFps = 20;
+        targetBitrate = 900000;
+    }
+
     bool aok = false;
     QMetaObject::invokeMethod(audioEnc, [&]() {
         aok = audioEnc->open(44100, 1);
@@ -286,7 +326,7 @@ void MainWindow::on_startMeetingButton_clicked()
 
     bool encOk = false;
     QMetaObject::invokeMethod(netEnc, [&]() {
-        encOk = netEnc->openVideo(1280, 720, 30);
+        encOk = netEnc->openVideo(targetW, targetH, targetFps, targetBitrate);
     }, Qt::BlockingQueuedConnection);
     if (!encOk) {
         qWarning() << "[Mainwindow] netEnc openVideo 失败";
@@ -325,12 +365,11 @@ void MainWindow::on_startMeetingButton_clicked()
         }, Qt::QueuedConnection);
     }
 
-    const QString pushUrl = QString("rtmp://127.0.0.1/live/%1").arg(selfStream);
     bool rtmpOk = false;
     QMetaObject::invokeMethod(pusher, [&]() {
-        pusher->setVideoParams(1280, 720, 30);
+        pusher->setVideoParams(targetW, targetH, targetFps);
         pusher->setAudioParams(44100, 1);
-        rtmpOk = pusher->start(pushUrl, 30, 44100);
+        rtmpOk = pusher->start(currentPushUrl, targetFps, 44100);
     },Qt::BlockingQueuedConnection);
 
     if (!rtmpOk) {
@@ -340,8 +379,9 @@ void MainWindow::on_startMeetingButton_clicked()
         qDebug() << "[Mainwindow] RTMP推流已启动";
         isPublishing = true;
     }
+    updateMeetingStatsUi();
 
-    appendRoomEvent(QString("开始会议，推流: %1").arg(pushUrl));
+    appendRoomEvent(QString("开始会议，推流: %1").arg(currentPushUrl));
     if (signalConnected) {
         sendSignalUpdate();
     }
@@ -364,6 +404,8 @@ void MainWindow::on_stopMeetingButton_clicked()
     manualSignalDisconnect = true;
     resetSignalReconnectState();
     isPublishing = false;
+    currentPushUrl.clear();
+    adaptiveStressScore = 0;
     localScreenShareOn=false;
     qInfo() << "[Mainwindow] stop meeting begin";
 
@@ -468,6 +510,7 @@ void MainWindow::on_stopMeetingButton_clicked()
     if (ui && ui->remoteVideolabel) {
         ui->remoteVideolabel->clear();
     }
+    updateMeetingStatsUi();
 
     qDebug() << "[Mainwindow] 会议已结束";
     stopMeetingInProgress = false;
@@ -1563,6 +1606,199 @@ void MainWindow::onDebugStopAVRecord()
     isRecording=false;
 }
 
+void MainWindow::setupAdaptiveNetworkControl()
+{
+    if (adaptiveRecoverTimer) return;
+    adaptiveRecoverTimer = new QTimer(this);
+    adaptiveRecoverTimer->setInterval(5000);
+    connect(adaptiveRecoverTimer, &QTimer::timeout, this, [this]() {
+        tryRecoverAdaptiveProfile();
+    });
+    adaptiveRecoverTimer->start();
+}
+
+void MainWindow::applyAdaptiveProfile(int level, bool restartPipeline)
+{
+    static const PublishProfile kProfiles[] = {
+        {QStringLiteral("高清"), 1280, 720, 30, 2200000, 1920, 1080},
+        {QStringLiteral("均衡"), 960, 540, 24, 1400000, 1600, 900},
+        {QStringLiteral("流畅"), 640, 360, 20, 900000, 1280, 720}
+    };
+
+    const int targetLevel = qBound(0, level, 2);
+    const bool changed = (adaptiveProfileLevel != targetLevel);
+    adaptiveProfileLevel = targetLevel;
+    const PublishProfile &p = kProfiles[adaptiveProfileLevel];
+
+    if (videoWorker) {
+        QMetaObject::invokeMethod(videoWorker, "setTargetFps", Qt::QueuedConnection, Q_ARG(int, p.fps));
+        QMetaObject::invokeMethod(videoWorker, "setShareMaxSize", Qt::QueuedConnection, Q_ARG(int, p.shareMaxW), Q_ARG(int, p.shareMaxH));
+    }
+
+    if (changed) {
+        appendRoomEvent(QString("网络策略切换：%1（%2x%3@%4, %5kbps）")
+                            .arg(p.name).arg(p.width).arg(p.height).arg(p.fps).arg(p.bitrate / 1000));
+        updateMeetingStatsUi();
+    }
+
+    if (!restartPipeline) return;
+    if (meetingStopped || !isPublishing) return;
+    if (!netEnc || !pusher || !encThread || !pushThread) return;
+    if (!encThread->isRunning() || !pushThread->isRunning()) return;
+
+    if (currentPushUrl.isEmpty() && !selfStream.isEmpty()) {
+        currentPushUrl = QString("rtmp://127.0.0.1/live/%1").arg(selfStream);
+    }
+    if (currentPushUrl.isEmpty()) return;
+
+    bool encOk = false;
+    QMetaObject::invokeMethod(netEnc, [&]() {
+        netEnc->close();
+        encOk = netEnc->openVideo(p.width, p.height, p.fps, p.bitrate);
+    }, Qt::BlockingQueuedConnection);
+
+    bool pushOk = false;
+    QMetaObject::invokeMethod(pusher, [&]() {
+        pusher->stop();
+        pusher->setVideoParams(p.width, p.height, p.fps);
+        pusher->setAudioParams(44100, 1);
+        pushOk = pusher->start(currentPushUrl, p.fps, 44100);
+    }, Qt::BlockingQueuedConnection);
+
+    if (!encOk || !pushOk) {
+        appendRoomEvent("网络策略切换失败：推流重建失败");
+        qWarning() << "[Adaptive] profile rebuild failed encOk=" << encOk << " pushOk=" << pushOk;
+        isPublishing = false;
+        updateMeetingStatsUi();
+        return;
+    }
+
+    qInfo() << "[Adaptive] profile applied" << p.name << p.width << p.height << p.fps << p.bitrate;
+    updateMeetingStatsUi();
+}
+
+void MainWindow::handleNetworkIssue(const QString &reason, int weight)
+{
+    if (meetingStopped || !isPublishing) return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    lastAdaptiveIssueMs = now;
+    adaptiveStressScore = qMin(12, adaptiveStressScore + qMax(1, weight));
+
+    if (now - lastAdaptiveLogMs > 1500) {
+        appendRoomEvent(QString("网络波动: %1").arg(reason));
+        lastAdaptiveLogMs = now;
+    }
+
+    if (adaptiveStressScore >= 3 && adaptiveProfileLevel < 2) {
+        adaptiveStressScore = 0;
+        applyAdaptiveProfile(adaptiveProfileLevel + 1, true);
+    }
+}
+
+void MainWindow::tryRecoverAdaptiveProfile()
+{
+    if (meetingStopped || !isPublishing) return;
+    if (adaptiveProfileLevel <= 0) return;
+    if (lastAdaptiveIssueMs <= 0) return;
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - lastAdaptiveIssueMs < 25000) return;
+
+    adaptiveStressScore = 0;
+    lastAdaptiveIssueMs = now;
+    applyAdaptiveProfile(adaptiveProfileLevel - 1, true);
+}
+
+void MainWindow::setupMeetingStatsUi()
+{
+    meetingStatsLabel = findChild<QLabel*>("meetingStatsLabel");
+    if (!meetingStatsLabel && statusBar()) {
+        meetingStatsLabel = new QLabel(this);
+        meetingStatsLabel->setObjectName("meetingStatsLabelFallback");
+        statusBar()->addPermanentWidget(meetingStatsLabel, 1);
+    }
+    if (!meetingStatsTimer) {
+        meetingStatsTimer = new QTimer(this);
+        meetingStatsTimer->setInterval(1000);
+        connect(meetingStatsTimer, &QTimer::timeout, this, &MainWindow::updateMeetingStatsUi);
+        meetingStatsTimer->start();
+    }
+    updateMeetingStatsUi();
+}
+
+void MainWindow::updateMeetingStatsUi()
+{
+    struct ProfileView {
+        const char *name;
+        int w;
+        int h;
+        int fps;
+        int bitrate;
+    };
+    static const ProfileView kProfiles[] = {
+        {"高清", 1280, 720, 30, 2200000},
+        {"均衡", 960, 540, 24, 1400000},
+        {"流畅", 640, 360, 20, 900000}
+    };
+
+    QString stageText = isPublishing ? "推流中" : "未推流";
+    QString profileText = "--";
+    QString avText = "--";
+    QString brText = "--";
+    if (adaptiveProfileLevel >= 0 && adaptiveProfileLevel <= 2) {
+        const ProfileView &p = kProfiles[adaptiveProfileLevel];
+        profileText = QString::fromUtf8(p.name);
+        avText = QString("%1x%2@%3").arg(p.w).arg(p.h).arg(p.fps);
+        brText = QString("%1kbps").arg(p.bitrate / 1000);
+    }
+
+    const QString text = QString("%1 | 档位:%2 | %3 | %4 | 重连:信令%5 拉流%6")
+                             .arg(stageText)
+                             .arg(profileText)
+                             .arg(avText)
+                             .arg(brText)
+                             .arg(totalSignalReconnectCount)
+                             .arg(totalPullRetryCount);
+    if (meetingStatsLabel) {
+        meetingStatsLabel->setText(text);
+    }
+}
+
+void MainWindow::exportRecentMeetingLogs()
+{
+    if (recentEventLogs.isEmpty()) {
+        QMessageBox::information(this, "提示", "当前没有可导出的会议日志");
+        return;
+    }
+
+    const QString defaultName = QString("meeting_log_%1.txt")
+                                    .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
+    const QString defaultPath = QDir::current().absoluteFilePath(defaultName);
+    const QString filePath = QFileDialog::getSaveFileName(
+        this, "导出会中日志", defaultPath, "文本文件 (*.txt);;所有文件 (*)");
+    if (filePath.isEmpty()) return;
+
+    QFile f(filePath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, "导出失败", QString("无法写入文件：%1").arg(filePath));
+        return;
+    }
+
+    QTextStream out(&f);
+    out.setEncoding(QStringConverter::Utf8);
+    out << "SmartMeet 会中日志导出\n";
+    out << "导出时间: " << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") << "\n";
+    out << "房间: " << roomId << "  用户流: " << selfStream << "\n";
+    out << "------------------------------\n";
+    for (const QString &line : recentEventLogs) {
+        out << line << '\n';
+    }
+    f.close();
+
+    appendRoomEvent(QString("会中日志已导出：%1").arg(filePath));
+}
+
 void MainWindow::resetSignalReconnectState()
 {
     signalReconnectAttempt = 0;
@@ -1873,6 +2109,10 @@ void MainWindow::setupBottomMenus()//聊天面板入口
                 }
             }
             if (chatInputEdit) chatInputEdit->setFocus();
+        });
+        auto *exportLogs = moreMenu->addAction("导出最近日志");
+        connect(exportLogs, &QAction::triggered, this, [this]() {
+            exportRecentMeetingLogs();
         });
         moreMenu->addSeparator();
         selfMicToggleAction = moreMenu->addAction("静音我自己");
@@ -2356,6 +2596,10 @@ void MainWindow::appendRoomEvent(const QString &text)
 {
     const QString msg = QString("[%1] %2")
                             .arg(QDateTime::currentDateTime().toString("hh:mm:ss"), text);
+    recentEventLogs.enqueue(msg);
+    while (recentEventLogs.size() > 200) {
+        recentEventLogs.dequeue();
+    }
     if (roomEventLog) {
         roomEventLog->appendPlainText(msg);
     }
@@ -2674,6 +2918,7 @@ void MainWindow::onSignalConnected()
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
 
     if (reconnectSnapshot > 0) {
+        ++totalSignalReconnectCount;
         appendRoomEvent(QString("信令重连成功（第 %1 次）").arg(reconnectSnapshot));
     }
     appendRoomEvent(pendingAuthRegister ? "信令已连接，正在注册..." : "信令已连接，正在登录...");
@@ -2683,6 +2928,7 @@ void MainWindow::onSignalConnected()
         sendSignalAuthLogin();
     }
     refreshSelfControlActions();
+    updateMeetingStatsUi();
 }
 
 void MainWindow::onSignalDisconnected()
@@ -2722,6 +2968,7 @@ void MainWindow::onSignalDisconnected()
     if (!manualSignalDisconnect && !meetingStopped && !shuttingDown) {
         scheduleSignalReconnect("检测到信令断开");
     }
+    updateMeetingStatsUi();
 }
 
 void MainWindow::onSignalTextMessage(const QString &msg)
@@ -3264,6 +3511,16 @@ void MainWindow::ensurePullSession(const QString &stream)
         PullSession *s = pullSessions.value(stream, nullptr);
         if (!s) return;
         appendRoomEvent(QString("拉流错误(%1): %2").arg(stream, e));
+
+        const QString errLower = e.toLower();
+        const bool nonNetwork =
+            errLower.contains("operation not permitted") ||
+            errLower.contains("no such stream") ||
+            errLower.contains("immediate exit requested");
+        if (!nonNetwork && (stream == focusedStream || stream == selfStream)) {
+            handleNetworkIssue(QString("拉流抖动(%1)").arg(stream), 1);
+        }
+
         if (meetingStopped || !signalConnected) return;
         const QStringList needed = currentDisplayStreams();
         if (!needed.contains(stream)) return;
@@ -3279,6 +3536,8 @@ void MainWindow::ensurePullSession(const QString &stream)
         const int jitter = QRandomGenerator::global()->bounded(120);
         const int delayMs = qMin(5000, baseDelay + jitter);
         const quint64 epoch = ++s->retryEpoch;
+        ++totalPullRetryCount;
+        updateMeetingStatsUi();
         appendRoomEvent(QString("准备重试拉流(%1/8): %2").arg(retryIndex).arg(stream));
 
         QTimer::singleShot(delayMs, this, [this, stream, epoch]() {
