@@ -32,6 +32,7 @@
 #include <QStringConverter>
 #include <QDir>
 #include <QStatusBar>
+#include <QSizePolicy>
 #include <algorithm>
 #include<QHBoxLayout>
 #include<QTabWidget>
@@ -215,7 +216,7 @@ void MainWindow::on_startMeetingButton_clicked()
         return;
     }
     appendRoomEvent(QString("房间: %1 用户流: %2").arg(roomId, selfStream));
-    currentPushUrl = QString("rtmp://127.0.0.1/live/%1").arg(selfStream);
+    currentPushUrl = QString("rtmp://8.134.203.85/live/%1").arg(selfStream);
 
     if (!videoWorker) {
         videoWorker = new VideoCapture;
@@ -299,6 +300,8 @@ void MainWindow::on_startMeetingButton_clicked()
 
     // 启动会议时先应用默认档位（高清）
     applyAdaptiveProfile(0, false);
+    videoQueueDepthToken = std::make_shared<std::atomic_int>(0);
+    lastVideoDropProtectLogMs = 0;
 
     int targetW = 1280;
     int targetH = 720;
@@ -341,6 +344,8 @@ void MainWindow::on_startMeetingButton_clicked()
     if (videoSendConn) disconnect(videoSendConn);
     videoSendConn = connect(videoWorker, &VideoCapture::frameCaptured, this, [this](const QImage &img) {
         if (!netEnc) return;
+        auto queueDepthToken = videoQueueDepthToken;
+        if (!queueDepthToken) return;
         QImage out = img;
         if (!localVideoOn) {
             static QImage blackFrame;
@@ -350,7 +355,30 @@ void MainWindow::on_startMeetingButton_clicked()
             }
             out = blackFrame;
         }
-        QMetaObject::invokeMethod(netEnc, "pushVideoFrame", Qt::QueuedConnection, Q_ARG(QImage, out));
+        // 背压保护：编码跟不上时只保留极少在途帧，避免共享后切回摄像头出现长时间慢动作。
+        if (queueDepthToken->load(std::memory_order_relaxed) >= 2) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if (now - lastVideoDropProtectLogMs > 1500) {
+                appendRoomEvent("视频编码繁忙：已启用丢帧保护");
+                lastVideoDropProtectLogMs = now;
+            }
+            return;
+        }
+
+        queueDepthToken->fetch_add(1, std::memory_order_relaxed);
+        QPointer<AvNetEncoder> encPtr(netEnc);
+        const bool queued = QMetaObject::invokeMethod(
+            netEnc,
+            [encPtr, queueDepthToken, out]() {
+                if (encPtr) {
+                    encPtr->pushVideoFrame(out);
+                }
+                queueDepthToken->fetch_sub(1, std::memory_order_relaxed);
+            },
+            Qt::QueuedConnection);
+        if (!queued) {
+            queueDepthToken->fetch_sub(1, std::memory_order_relaxed);
+        }
     }, Qt::QueuedConnection);
 
     if (audioWorker) {
@@ -417,6 +445,7 @@ void MainWindow::on_stopMeetingButton_clicked()
     qInfo() << "[Mainwindow] stop pull done";
 
     if (videoSendConn) disconnect(videoSendConn);
+    videoQueueDepthToken = std::make_shared<std::atomic_int>(0);
     if (audioSendConn) disconnect(audioSendConn);
     if (netEnc && pusher) disconnect(netEnc, &AvNetEncoder::videoPacketReady, pusher, nullptr);
     if (audioEnc && pusher) disconnect(audioEnc, &AvAudioEncoder::audioPacketReady, pusher, nullptr);
@@ -501,6 +530,10 @@ void MainWindow::on_stopMeetingButton_clicked()
     currentRemoteStream.clear();
     focusedStream.clear();
     focusMode = false;
+    if (focusPreviewFullScreen) {
+        focusPreviewFullScreen = false;
+        showNormal();
+    }
     refreshRoomUserList();
     clearAllTileFrames();
     latestRemoteFrames.clear();
@@ -616,14 +649,23 @@ void MainWindow::applyLocalVideoSource()
 {
     if(!videoWorker||!videoThread||!videoThread->isRunning()) return;
     const int mode=localScreenShareOn?1:0;
+    int baseFps = 30;
+    if (adaptiveProfileLevel == 1) baseFps = 24;
+    else if (adaptiveProfileLevel >= 2) baseFps = 20;
+    // 共享模式下适当降帧，减小 CPU 压力并降低编码堆积风险。
+    const int targetFps = localScreenShareOn ? qMin(baseFps, 24) : baseFps;
 
     if(localScreenShareOn){
         videoWorker->setShareTarget(shareScreenIndex,shareWindowId);
     }
 
+    // 切换源时重置背压计数，避免共享阶段遗留状态影响切回摄像头后的发送节奏。
+    videoQueueDepthToken = std::make_shared<std::atomic_int>(0);
+
     //不能走QueuedConnection:captureLoop常驻会导致槽不执行
+    videoWorker->setTargetFps(targetFps);
     videoWorker->setCaptureMode(mode);
-    qInfo()<<"[Share] local source="<<(mode==1?shareSourceName:"camera");
+    qInfo()<<"[Share] local source="<<(mode==1?shareSourceName:"camera")<<"fps="<<targetFps;
 }
 
 void MainWindow::applyBeautyToWorker()
@@ -632,14 +674,11 @@ void MainWindow::applyBeautyToWorker()
 
     const int level=qBound(0,localBeautyLevel,100);
     const int style=localBeautyStyle;
-    QPointer<VideoCapture> worker(videoWorker);
-
-    QMetaObject::invokeMethod(videoWorker,[worker,style,level](){
-        if(!worker) return;
-        worker->setBeautyStyle(style);
-        worker->setBeautyLevel(level);
-        worker->setBeautyEnabled(level>0&&style>0);
-    },Qt::QueuedConnection);
+    // VideoCapture::captureLoop 常驻，无事件循环，QueuedConnection 可能不生效。
+    // 这些 setter 内部都有 mutex，直接调用即可线程安全。
+    videoWorker->setBeautyStyle(style);
+    videoWorker->setBeautyLevel(level);
+    videoWorker->setBeautyEnabled(level>0&&style>0);
 }
 
 void MainWindow::setBeautyMode(const QString &modeName, int level)
@@ -1631,8 +1670,9 @@ void MainWindow::applyAdaptiveProfile(int level, bool restartPipeline)
     const PublishProfile &p = kProfiles[adaptiveProfileLevel];
 
     if (videoWorker) {
-        QMetaObject::invokeMethod(videoWorker, "setTargetFps", Qt::QueuedConnection, Q_ARG(int, p.fps));
-        QMetaObject::invokeMethod(videoWorker, "setShareMaxSize", Qt::QueuedConnection, Q_ARG(int, p.shareMaxW), Q_ARG(int, p.shareMaxH));
+        // VideoCapture::captureLoop 常驻，无事件循环，QueuedConnection 可能不生效。
+        videoWorker->setTargetFps(p.fps);
+        videoWorker->setShareMaxSize(p.shareMaxW, p.shareMaxH);
     }
 
     if (changed) {
@@ -1647,7 +1687,7 @@ void MainWindow::applyAdaptiveProfile(int level, bool restartPipeline)
     if (!encThread->isRunning() || !pushThread->isRunning()) return;
 
     if (currentPushUrl.isEmpty() && !selfStream.isEmpty()) {
-        currentPushUrl = QString("rtmp://127.0.0.1/live/%1").arg(selfStream);
+        currentPushUrl = QString("rtmp://8.134.203.85/live/%1").arg(selfStream);
     }
     if (currentPushUrl.isEmpty()) return;
 
@@ -2224,7 +2264,8 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     }
 
     if (watched && watched->objectName() == "remoteStageFrame" &&
-        (event->type() == QEvent::Resize || event->type() == QEvent::Move || event->type() == QEvent::Show)) {
+        (event->type() == QEvent::Resize || event->type() == QEvent::Move ||
+         event->type() == QEvent::Show || event->type() == QEvent::LayoutRequest)) {
         syncRemoteContainerGeometry();
     }
 
@@ -2239,6 +2280,25 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                 tile.cornerBadge->raise();
             }
         }
+    }
+
+    const bool isFocusSurface =
+        (ui && watched == ui->remoteVideolabel) ||
+        (watched == remoteContainer) ||
+        (watched && watched->objectName() == "remoteStageFrame");
+    if (isFocusSurface && event->type() == QEvent::MouseButtonDblClick) {
+        if (!focusMode || focusedStream.isEmpty()) return true;
+        if (!focusPreviewFullScreen) {
+            focusPreviewFullScreen = true;
+            showFullScreen();
+            appendRoomEvent("已进入焦点全屏（双击退出）");
+        } else {
+            focusPreviewFullScreen = false;
+            showNormal();
+            syncRemoteContainerGeometry();
+            appendRoomEvent("已退出焦点全屏");
+        }
+        return true;
     }
 
     if (event->type() == QEvent::MouseButtonDblClick) {
@@ -2258,6 +2318,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                 focusMode = false;
                 focusedStream.clear();
                 currentRemoteStream.clear();
+                if (focusPreviewFullScreen) {
+                    focusPreviewFullScreen = false;
+                    showNormal();
+                    syncRemoteContainerGeometry();
+                }
                 if (remoteStack && remoteGridPage) {
                     remoteStack->setCurrentWidget(remoteGridPage);
                 }
@@ -2346,10 +2411,18 @@ void MainWindow::setupRemoteGridUi()
         remoteTiles.push_back(tile);
     }
 
+    if (QWidget *oldParent = ui->remoteVideolabel->parentWidget()) {
+        if (QLayout *oldLayout = oldParent->layout()) {
+            oldLayout->removeWidget(ui->remoteVideolabel);
+        }
+    }
     ui->remoteVideolabel->setParent(remoteContainer);
-    ui->remoteVideolabel->setMinimumSize(120, 80);
+    ui->remoteVideolabel->setMinimumSize(0, 0);
+    ui->remoteVideolabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    ui->remoteVideolabel->setScaledContents(false);
     ui->remoteVideolabel->setAlignment(Qt::AlignCenter);
     ui->remoteVideolabel->setStyleSheet("QLabel{background:black;color:#d0d0d0;}");
+    ui->remoteVideolabel->installEventFilter(this);
 
     remoteStack->addWidget(remoteGridPage);
     remoteStack->addWidget(ui->remoteVideolabel);
@@ -2362,6 +2435,7 @@ void MainWindow::setupRemoteGridUi()
     focusStatusLabel->hide();
     focusStatusLabel->raise();
 
+    remoteContainer->installEventFilter(this);
     hostParent->installEventFilter(this);
     remoteContainer->show();
 }
@@ -2623,6 +2697,11 @@ void MainWindow::refreshRoomUserList()
             focusMode = false;
             focusedStream.clear();
             currentRemoteStream.clear();
+            if (focusPreviewFullScreen) {
+                focusPreviewFullScreen = false;
+                showNormal();
+                syncRemoteContainerGeometry();
+            }
             if (ui && ui->remoteVideolabel) {
                 ui->remoteVideolabel->clear();
             }
@@ -3554,7 +3633,7 @@ void MainWindow::ensurePullSession(const QString &stream)
     });
 
     sess->thread->start(QThread::HighPriority);
-    const QString url = QString("rtmp://127.0.0.1/live/%1").arg(stream);
+    const QString url = QString("rtmp://8.134.203.85/live/%1").arg(stream);
     QMetaObject::invokeMethod(sess->puller, "startPull", Qt::QueuedConnection, Q_ARG(QString, url));
     appendRoomEvent(QString("开始拉流: %1").arg(stream));
 }

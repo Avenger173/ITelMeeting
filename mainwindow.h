@@ -35,6 +35,8 @@
 #include <QLineEdit>
 #include <QCheckBox>
 #include <QQueue>
+#include <atomic>
+#include <memory>
 
 #include "videocapture.h"
 #include "audiocapture.h"
@@ -224,6 +226,8 @@ private:
     bool camRecording = false;
     int recFps = 30;
     qint64 lastPushMs = 0;
+    std::shared_ptr<std::atomic_int> videoQueueDepthToken = std::make_shared<std::atomic_int>(0);
+    qint64 lastVideoDropProtectLogMs = 0;
 
     AVSender *sender = nullptr;
     AVReceiver *receiver = nullptr;
@@ -266,7 +270,7 @@ private:
 
     QWebSocket *signalSocket = nullptr;
     bool signalConnected = false;
-    QString signalUrl = "ws://127.0.0.1:9001";
+    QString signalUrl = "ws://8.134.203.85:9001";
     QTimer *signalReconnectTimer = nullptr;
     int signalReconnectAttempt = 0;
     int signalReconnectMaxAttempt = 12;
@@ -321,6 +325,7 @@ private:
     QHash<QString, QImage> latestRemoteFrames;
     QString focusedStream;
     bool focusMode = false;
+    bool focusPreviewFullScreen = false;
     bool localScreenShareOn=false;
     int shareScreenIndex=0;
 

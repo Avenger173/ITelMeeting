@@ -140,6 +140,9 @@ void VideoCapture::captureLoop()
         int fpsHint = 30;
         int shareMaxW = 1920;
         int shareMaxH = 1080;
+        bool beautyOn = false;
+        int beautyLv = 0;
+        int beautySty = 0;
 
         {
             QMutexLocker locker(&mutex);
@@ -147,6 +150,22 @@ void VideoCapture::captureLoop()
             fpsHint = std::clamp(targetFps, 8, 30);
             shareMaxW = std::max(640, shareMaxWidth);
             shareMaxH = std::max(360, shareMaxHeight);
+            beautyOn = beautyEnabled;
+            beautyLv = beautyLevel;
+            beautySty = beautyStyle;
+        }
+
+        int effectiveFps = fpsHint;
+        if (mode == CaptureMode::Camera && beautyOn && beautyLv > 0 && beautySty > 0) {
+            // 重度美颜样式进一步限帧，避免 CPU 峰值导致整体卡顿。
+            if (beautySty >= 5) effectiveFps = std::min(effectiveFps, 18);
+            else if (beautySty == 4) effectiveFps = std::min(effectiveFps, 24);
+        }
+        const int minIntervalMs = std::max(1, 1000 / std::max(1, effectiveFps));
+        const qint64 nowPre = QDateTime::currentMSecsSinceEpoch();
+        if (nowPre - lastSend < minIntervalMs) {
+            QThread::msleep(1);
+            continue;
         }
 
         if (mode == CaptureMode::Camera) {
@@ -165,18 +184,8 @@ void VideoCapture::captureLoop()
                 continue;
             }
 
-            bool beautyOn = false;
-            int beautyLv = 0;
-            int style = 0;
-            {
-                QMutexLocker locker(&mutex);
-                beautyOn = beautyEnabled;
-                beautyLv = beautyLevel;
-                style = beautyStyle;
-            }
-
-            if (beautyOn && beautyLv > 0 && style > 0) {
-                applyBeautyFilter(frame, style, beautyLv);
+            if (beautyOn && beautyLv > 0 && beautySty > 0) {
+                applyBeautyFilter(frame, beautySty, beautyLv);
             }
 
             img = QImage(frame.cols, frame.rows, QImage::Format_RGB888);
@@ -256,13 +265,7 @@ void VideoCapture::captureLoop()
             lastFrame = img;
         }
 
-        const qint64 now = QDateTime::currentMSecsSinceEpoch();
-        const int minIntervalMs = std::max(1, 1000 / fpsHint);
-        if (now - lastSend < minIntervalMs) {
-            QThread::msleep(1);
-            continue;
-        }
-        lastSend = now;
+        lastSend = QDateTime::currentMSecsSinceEpoch();
 
         emit frameCaptured(img);
     }
@@ -313,8 +316,8 @@ std::vector<cv::Rect> VideoCapture::detectFaces(const cv::Mat &frame)
     if (!ensureFaceCascadeLoaded()) return result;
 
     ++faceDetectTick;
-    // 每 5 帧检测一次，人脸框在中间帧复用，减少 CPU 开销
-    if (faceDetectTick % 5 != 0 && !cachedFaces.empty()) {
+    // 每 12 帧检测一次，人脸框在中间帧复用，减少 CPU 开销
+    if (faceDetectTick % 12 != 0 && !cachedFaces.empty()) {
         return cachedFaces;
     }
 
@@ -355,9 +358,49 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
     if (frame.empty()) return;
 
     const double t = std::clamp(level / 100.0, 0.0, 1.0);
+    if (style <= 0 || t <= 0.0) return;
 
-    // 先拿人脸框，瘦脸/祛皱需要
-    const auto faces = detectFaces(frame);
+    // 1~3 走快速路径，避免全帧 bilateral 带来的卡顿。
+    if (style >= 1 && style <= 3) {
+        cv::Mat blur;
+        double sigma = 0.9 + 1.5 * t;
+        double blend = 0.20 + 0.25 * t;
+        double lift = 0.5 + 3.0 * t;
+        if (style == 2) {
+            sigma = 0.8 + 1.2 * t;
+            blend = 0.12 + 0.16 * t;
+            lift = 0.2 + 1.5 * t;
+        } else if (style == 3) {
+            sigma = 1.2 + 2.0 * t;
+            blend = 0.30 + 0.30 * t;
+            lift = 0.8 + 4.0 * t;
+        }
+        cv::GaussianBlur(frame, blur, cv::Size(0, 0), sigma, sigma);
+        cv::addWeighted(frame, 1.0 - blend, blur, blend, lift, frame);
+
+        if (style == 2) {
+            // 清晰：轻锐化
+            cv::Mat g;
+            cv::GaussianBlur(frame, g, cv::Size(0, 0), 0.9);
+            cv::addWeighted(frame, 1.12 + 0.10 * t, g, -(0.12 + 0.10 * t), 0.0, frame);
+        } else if (style == 3) {
+            // 柔和：微暖色
+            cv::Mat ycrcb;
+            cv::cvtColor(frame, ycrcb, cv::COLOR_BGR2YCrCb);
+            std::vector<cv::Mat> ch;
+            cv::split(ycrcb, ch);
+            ch[1].convertTo(ch[1], -1, 1.0, 2.0 + 7.0 * t);
+            cv::merge(ch, ycrcb);
+            cv::cvtColor(ycrcb, frame, cv::COLOR_YCrCb2BGR);
+        }
+        return;
+    }
+
+    std::vector<cv::Rect> faces;
+    if (style == 5 || style == 6) {
+        // 仅几何/局部处理模式才做人脸检测，减少无效 CPU 消耗。
+        faces = detectFaces(frame);
+    }
 
     // 5=瘦脸：先做几何瘦脸，再进入后续轻磨皮
     if (style == 5 && !faces.empty()) {
@@ -367,8 +410,11 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
     double scale = 1.0;
     if (frame.cols > 1280 || frame.rows > 720) {
         scale = 0.5;
-    } else if (frame.cols > 960) {
+    } else if (frame.cols > 960 || frame.rows > 540) {
         scale = 0.66;
+    } else if (style >= 4) {
+        // 重美颜在中低分辨率也统一降采样，换取稳定帧率。
+        scale = 0.75;
     }
 
     cv::Mat srcSmall;
@@ -383,50 +429,14 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
     std::vector<cv::Mat> ch;
     cv::split(ycrcb, ch);
 
-    int d = 7;
-    double sigma = 20.0 + 32.0 * t;
-    double alpha = 0.45 + 0.30 * t;
-    double beta = 3.0 + 14.0 * t;
-
-    switch (style) {
-    case 1: // 自然
-        d = 7;
-        sigma = 18.0 + 24.0 * t;
-        alpha = 0.38 + 0.24 * t;
-        beta = 2.0 + 10.0 * t;
-        break;
-    case 2: // 清晰
-        d = 7;
-        sigma = 16.0 + 18.0 * t;
-        alpha = 0.20 + 0.18 * t;
-        beta = 1.5 + 8.0 * t;
-        break;
-    case 3: // 柔和
-        d = 11;
-        sigma = 24.0 + 42.0 * t;
-        alpha = 0.55 + 0.30 * t;
-        beta = 3.0 + 12.0 * t;
-        break;
-    case 4: // 磨皮
-        d = 11;
-        sigma = 30.0 + 50.0 * t;
-        alpha = 0.70 + 0.25 * t;
-        beta = 2.0 + 9.0 * t;
-        break;
-    case 5: // 瘦脸
-        d = 7;
-        sigma = 16.0 + 20.0 * t;
-        alpha = 0.28 + 0.22 * t;
-        beta = 1.5 + 7.0 * t;
-        break;
-    case 6: // 祛皱
-        d = 9;
-        sigma = 28.0 + 44.0 * t;
-        alpha = 0.62 + 0.26 * t;
-        beta = 3.0 + 10.0 * t;
-        break;
-    default:
-        break;
+    int d = (style == 4) ? 9 : 7;
+    double sigma = 18.0 + 26.0 * t;
+    double alpha = 0.42 + 0.28 * t;
+    double beta = 1.5 + 8.0 * t;
+    if (style == 6) {
+        sigma = 22.0 + 28.0 * t;
+        alpha = 0.50 + 0.24 * t;
+        beta = 2.0 + 7.0 * t;
     }
 
     cv::Mat ySmooth;
@@ -434,30 +444,9 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
     cv::addWeighted(ch[0], 1.0 - alpha, ySmooth, alpha, 0.0, ch[0]);
     ch[0].convertTo(ch[0], -1, 1.0, beta);
 
-    if (style == 3) {
-        // 柔和模式略暖色
-        ch[1].convertTo(ch[1], -1, 1.0, 2.0 + 6.0 * t);
-    }
-
     cv::merge(ch, ycrcb);
     cv::Mat beautSmall;
     cv::cvtColor(ycrcb, beautSmall, cv::COLOR_YCrCb2BGR);
-
-    if (style == 2) {
-        // 清晰: CLAHE + 轻锐化
-        cv::Mat lab;
-        cv::cvtColor(beautSmall, lab, cv::COLOR_BGR2Lab);
-        std::vector<cv::Mat> labCh;
-        cv::split(lab, labCh);
-        cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
-        clahe->apply(labCh[0], labCh[0]);
-        cv::merge(labCh, lab);
-        cv::cvtColor(lab, beautSmall, cv::COLOR_Lab2BGR);
-
-        cv::Mat blur;
-        cv::GaussianBlur(beautSmall, blur, cv::Size(0, 0), 1.1);
-        cv::addWeighted(beautSmall, 1.20 + 0.10 * t, blur, -(0.20 + 0.10 * t), 0.0, beautSmall);
-    }
 
     cv::Mat beautBig;
     if (scale < 0.999) {
@@ -474,13 +463,16 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
 
             cv::Mat roi = beautBig(rr);
             cv::Mat smooth;
-            cv::bilateralFilter(roi, smooth, 9, 55.0 + 40.0 * t, 55.0 + 40.0 * t);
-            cv::addWeighted(roi, 0.28, smooth, 0.72, 2.0 + 4.0 * t, roi);
+            cv::GaussianBlur(roi, smooth, cv::Size(0, 0), 1.6 + 1.4 * t);
+            cv::addWeighted(roi, 0.40, smooth, 0.60, 1.0 + 2.5 * t, roi);
         }
     }
 
     cv::Mat mask(frame.rows, frame.cols, CV_8UC1, cv::Scalar(0));
-    if (!faces.empty()) {
+    if (style == 4) {
+        // 磨皮默认全局生效，保证效果可见。
+        mask.setTo(cv::Scalar(255));
+    } else if (!faces.empty()) {
         for (const auto &f : faces) {
             const int cx = f.x + f.width / 2;
             const int cy = f.y + f.height / 2;
@@ -491,15 +483,13 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
         }
     } else {
         // 无人脸时也要有可见效果：默认整帧生效，瘦脸模式稍弱
-        const int base = (style == 5) ? 170 : 255;
+        const int base = (style == 5) ? 170 : 235;
         mask.setTo(cv::Scalar(base));
     }
     cv::GaussianBlur(mask, mask, cv::Size(0, 0), 10.0);
 
-    double blend = 0.60 + 0.22 * t;
+    double blend = 0.70 + 0.18 * t;
     switch (style) {
-    case 2: blend = 0.36 + 0.14 * t; break; // 清晰
-    case 3: blend = 0.70 + 0.20 * t; break; // 柔和
     case 4: blend = 0.78 + 0.18 * t; break; // 磨皮
     case 5: blend = 0.44 + 0.18 * t; break; // 瘦脸
     case 6: blend = 0.74 + 0.20 * t; break; // 祛皱
