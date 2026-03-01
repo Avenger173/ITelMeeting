@@ -21,8 +21,8 @@ public:
     bool open(int deviceIndex);
     void stop();
     void capturePhoto(const QString &path);
-    QStringList availableCameras();
-    bool reopen(int deviceIndex);
+    QStringList availableCameras(); //枚举系统中所有可用的摄像头设备，返回设备列表
+    bool reopen(int deviceIndex);   //关闭当前打开的摄像头，重新打开指定索引的摄像头
     QSize frameSize() const;
 
 signals:
@@ -40,14 +40,14 @@ public slots:
     void setBeautyStyle(int style); // 0关 1自然 2清晰 3柔和 4磨皮 5瘦脸 6祛皱
 
 private:
-    bool ensureFaceCascadeLoaded();
-    std::vector<cv::Rect> detectFaces(const cv::Mat &frame);
-    void applyBeautyFilter(cv::Mat &frame, int style, int level);
+    bool ensureFaceCascadeLoaded(); //确保人脸检测的级联分类器（CascadeClassifier）已加载
+    std::vector<cv::Rect> detectFaces(const cv::Mat &frame);//对输入帧进行人脸检测，返回所有人脸的位置，std::vector<cv::Rect>，OpenCV 的矩形向量，存储检测到的所有人脸区域
+    void applyBeautyFilter(cv::Mat &frame, int style, int level);//对输入帧应用指定风格和等级的美颜滤镜
 
     std::atomic_bool running;
     cv::VideoCapture cap;
     QMutex mutex;
-    QImage lastFrame;
+    QImage lastFrame;   //截屏图片
     int currentDeviceIndex = 0;
 
     CaptureMode captureMode = CaptureMode::Camera;
@@ -61,11 +61,11 @@ private:
     int beautyLevel = 0;
     int beautyStyle = 0;
 
-    cv::CascadeClassifier faceCascade;
-    bool faceCascadeTried = false;
-    bool faceCascadeLoaded = false;
-    int faceDetectTick = 0;
-    std::vector<cv::Rect> cachedFaces;
+    cv::CascadeClassifier faceCascade;  //OpenCV 的级联分类器，用于人脸检测（加载 Haar/LBP 分类器模型）。
+    bool faceCascadeTried = false;  //标记是否已经尝试加载人脸分类器
+    bool faceCascadeLoaded = false; //标记人脸分类器是否成功加载
+    int faceDetectTick = 0; //人脸检测的计时 / 计数变量（例如每隔 N 帧检测一次人脸，避免每帧检测消耗性能）。
+    std::vector<cv::Rect> cachedFaces;  //缓存的人脸检测结果（避免每帧都检测，提升性能）。
 };
 
 #endif // VIDEOCAPTURE_H

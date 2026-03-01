@@ -49,45 +49,51 @@
 
 namespace {
 static bool stopThreadAndDelete(QThread *&thr, const char *tag, int quitWaitMs = 3000) {
-    if (!thr) return true;
-    thr->quit();
+    if (!thr) return true;  //线程为空，直接返回成功
+    thr->quit();    //发送退出信号
+    //等待线程退出（超出时间默认3秒）
     if (!thr->wait(quitWaitMs)) {
-        qWarning() << "[Mainwindow]" << tag << "stop timeout, detach";
-        thr->requestInterruption();
-        thr->setParent(nullptr);
-        QObject::connect(thr, &QThread::finished, thr, &QObject::deleteLater, Qt::UniqueConnection);
+        //超时处理，避免主线程卡死
+        qWarning() << "[Mainwindow]" << tag << "停止超时，分离";
+        thr->requestInterruption(); //标记线程中断
+        thr->setParent(nullptr);    //解除父对象关联
+        QObject::connect(thr, &QThread::finished, thr, &QObject::deleteLater, Qt::UniqueConnection);    //延迟销毁
         thr = nullptr;
         return false;
     }
+    //正常退出，直接销毁线程
     delete thr;
     thr = nullptr;
     return true;
 }
 }
 #ifdef Q_OS_WIN
-namespace{
+namespace{//存储窗口句柄和标题的结构体
 struct  WinShareEntry
 {
-    quint64 hwnd=0;
-    QString title;
+    quint64 hwnd=0; //窗口句柄
+    QString title;  //窗口标题
 };
-
+//windows窗口枚举回调函数：遍历系统可见窗口，收集它们的窗口句柄和标题，存储到QVector容器中
 static BOOL CALLBACK enumShareWindowProc(HWND hwnd,LPARAM lParam){
+    //将lParam（通用参数类型）强制转换为QVector<WinShareEntry>*类型，指向存储窗口信息的容器。
     auto *out=reinterpret_cast<QVector<WinShareEntry>*>(lParam);
     if(!out) return TRUE;
+    //过滤条件 1：跳过不可见窗口（IsWindowVisible(hwnd)返回 false）或最小化窗口（IsIconic(hwnd)返回 true），继续枚举。
     if(!IsWindowVisible(hwnd)||IsIconic(hwnd)) return TRUE;
+    //获取窗口的扩展样式（GWL_EXSTYLE），判断是否包含WS_EX_TOOLWINDOW（工具窗口样式，通常是小的辅助窗口，如工具栏、弹窗等）。
     const LONG exStyle=GetWindowLong(hwnd,GWL_EXSTYLE);
     if(exStyle & WS_EX_TOOLWINDOW) return TRUE;
 
     wchar_t titleBuf[512]={0};
-    const int len=GetWindowTextW(hwnd,titleBuf,511);
+    const int len=GetWindowTextW(hwnd,titleBuf,511);    //GetWindowTextW获取窗口的宽字符标题，最多读取 511 个字符（留 1 个位置给结束符）
     if(len<=0) return TRUE;
-
+    //宽字符标题转为QSTring，trimmed()：去除标题前后的空格（避免空标题或纯空格标题）
     const QString title=QString::fromWCharArray(titleBuf,len).trimmed();
     if(title.isEmpty()) return TRUE;
 
     WinShareEntry e;
-    e.hwnd=static_cast<quint64>(reinterpret_cast<quintptr>(hwnd));
+    e.hwnd=static_cast<quint64>(reinterpret_cast<quintptr>(hwnd));//hwnd 是指针类型，先转换为 quintptr（Qt 的无符号整型指针类型），再转换为 quint64（64 位无符号整数），方便存储；
     e.title=title;
     out->push_back(e);
     return TRUE;
@@ -95,6 +101,7 @@ static BOOL CALLBACK enumShareWindowProc(HWND hwnd,LPARAM lParam){
 }
 #endif
 
+// 主窗口构造：初始化 UI、信令、宫格、登录和基础状态
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -105,12 +112,7 @@ MainWindow::MainWindow(QWidget *parent)
     qInfo() << "[Build] SmartMeet" << __DATE__ << __TIME__;
 
     setWindowTitle("SmartMeet视频会议系统");
-    if (ui->startMeetingButton) ui->startMeetingButton->setText("开始会议");
-    if (ui->stopMeetingButton) ui->stopMeetingButton->setText("结束会议");
-    if (ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
-    if (ui->startRecordButton) ui->startRecordButton->setText("开始AV录制");
-    if (ui->stopRecordButton) ui->stopRecordButton->setText("停止AV录制");
-
+    //音视频设备检测与下拉框填充
     for (int i = 0; i < 5; ++i) {
         cv::VideoCapture temp(i);
         if (temp.isOpened()) {
@@ -129,32 +131,32 @@ MainWindow::MainWindow(QWidget *parent)
     connect(recorder, &AvRecorder::audioPacketReady, this, [](const QByteArray &pkt, quint32 pts){
         qDebug() << "[Recorder] 音频包" << pkt.size() << "pts" << pts;
     });
-
+    //初始化UI
     setupSignalUi();
     setupBottomMenus();
     setupRemoteGridUi();
     refreshRemoteTiles();
     setupMeetingStatsUi();
     setupLoginUi();
-
+    //信令自动重连定时器
     signalReconnectTimer = new QTimer(this);
-    signalReconnectTimer->setSingleShot(true);
+    signalReconnectTimer->setSingleShot(true);  //单次触发定时器（触发后自动停止）
     connect(signalReconnectTimer, &QTimer::timeout, this, [this]() {
-        if (shuttingDown || meetingStopped || manualSignalDisconnect) return;
-        if (signalConnected) return;
-        if (!ensureSignalCredential()) return;
-        if (!ensureRoomIdentity(false)) return;
-        openSignalConnection();
+        if (shuttingDown || meetingStopped || manualSignalDisconnect) return;// 各种状态判断：如果正在关闭/会议已停止/手动断开，直接返回
+        if (signalConnected) return;    //已经连接上了，无需重连
+        if (!ensureSignalCredential()) return;  // 确保信令认证信息有效
+        if (!ensureRoomIdentity(false)) return;  // 确保房间信息有效
+        openSignalConnection(); // 尝试重新建立信令连接
     });
-    setupAdaptiveNetworkControl();
-
+    setupAdaptiveNetworkControl();  // 初始化自适应网络控制（根据网络调整码率/帧率）
+    // 显示登录遮罩层，提示用户输入账号密码
     showLoginOverlay(true, "请输入账号、密码和房间号后登录");
 }
 
 MainWindow::~MainWindow()
 {
     qDebug()<<"[MainWindow] 析构";
-    shuttingDown = true;
+    shuttingDown = true;    //标志位
 
     on_stopMeetingButton_clicked();
     if(signalSocket){
@@ -163,13 +165,15 @@ MainWindow::~MainWindow()
         delete signalSocket;
         signalSocket=nullptr;
     }
+    // 移除所有尚未处理的、发送给当前窗口的事件，Qt 事件队列中可能还有未处理的事件，析构后处理会崩溃，这里主动清理
     QCoreApplication::removePostedEvents(this);
-
+    //安全释放UI资源
     auto tmp=ui;
     ui=nullptr;
     delete tmp;
 }
 
+//窗口关闭事件：统一触发停会收尾
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (shuttingDown) {
@@ -178,9 +182,10 @@ void MainWindow::closeEvent(QCloseEvent *event)
     }
     shuttingDown = true;
     on_stopMeetingButton_clicked();
-    QMainWindow::closeEvent(event);
+    QMainWindow::closeEvent(event); // 4. 调用父类（QMainWindow）的默认关闭事件处理，完成窗口关闭
 }
 
+// 窗口尺寸变化事件：同步远端容器和登录遮罩布局
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
@@ -188,6 +193,7 @@ void MainWindow::resizeEvent(QResizeEvent *event)
     syncLoginOverlayGeometry();
 }
 
+// 开始会议主流程：启动采集、编码、推流并同步状态
 void MainWindow::on_startMeetingButton_clicked()
 {
     localScreenShareOn=false;
@@ -226,9 +232,9 @@ void MainWindow::on_startMeetingButton_clicked()
 
         connect(videoThread, &QThread::started, videoWorker, &VideoCapture::captureLoop);
         connect(videoThread, &QThread::finished, videoWorker, &QObject::deleteLater, Qt::UniqueConnection);
-
+        //QPointer 是 Qt 提供的智能弱指针，专门用于管理 QObject 子类对象，当指向的对象被销毁时，QPointer 会自动置空，避免野指针访问。
         QPointer<QLabel> localLabel = ui->localVideolabel;
-        QPointer<MainWindow> self(this);
+        QPointer<MainWindow> self(this);    //self 指向当前 MainWindow 实例，用 QPointer 包裹是为了在 lambda 表达式中安全访问。
         disconnect(videoWorker, &VideoCapture::frameCaptured, this, nullptr);
         connect(videoWorker, &VideoCapture::frameCaptured, this, [self,localLabel](const QImage &img){
             if(!self) return;
@@ -254,11 +260,11 @@ void MainWindow::on_startMeetingButton_clicked()
             return;
         }
 
-        videoThread->start(QThread::HighPriority);
+        videoThread->start(QThread::HighPriority);  //高优先级启动线程
         applyLocalVideoSource();
         applyBeautyToWorker();
     }
-
+    //编码/推流线程初始化，均以高优先级启动
     if (!encThread) {
         encThread = new QThread(this);
         encThread->setObjectName("encThread");
@@ -274,8 +280,8 @@ void MainWindow::on_startMeetingButton_clicked()
         audioEncThread->setObjectName("audioEncThread");
         audioEncThread->start(QThread::HighPriority);
     }
-
-    if (!pusher) {
+    //编码/推流对象初始化
+    if (!pusher) {//RTMP推流器
         pusher = new RtmpPusher(nullptr);
         pusher->moveToThread(pushThread);
         connect(pushThread, &QThread::finished, pusher, &QObject::deleteLater, Qt::UniqueConnection);
@@ -284,7 +290,7 @@ void MainWindow::on_startMeetingButton_clicked()
             handleNetworkIssue(QString("推流写包异常: %1").arg(err), w);
         });
     }
-
+    //视频编码器
     if (!netEnc) {
         netEnc = new AvNetEncoder(nullptr);
         netEnc->moveToThread(encThread);
@@ -299,9 +305,10 @@ void MainWindow::on_startMeetingButton_clicked()
     if (!audioWorker) startAudioCapture();
 
     // 启动会议时先应用默认档位（高清）
-    applyAdaptiveProfile(0, false);
-    videoQueueDepthToken = std::make_shared<std::atomic_int>(0);
-    lastVideoDropProtectLogMs = 0;
+    //videoQueueDepthToken用于追踪视频队列的深度（可以理解为待处理的视频数据量），原子类型atomic_int保证多线程环境下读写不会出现数据竞争，是音视频开发中处理并发的常用方式。
+    applyAdaptiveProfile(0, false);//调用自适应配置应用函数，参数0代表默认的高清档位，false通常表示不执行额外的特殊逻辑（比如强制重启、立即生效等），核心作用是先把会议的视频参数初始化为高清配置。
+    videoQueueDepthToken = std::make_shared<std::atomic_int>(0);// 视频队列深度（原子变量）
+    lastVideoDropProtectLogMs = 0;//初始化视频丢包保护日志的最后记录时间（单位毫秒），用于控制日志打印频率，避免频繁输出日志占用资源。
 
     int targetW = 1280;
     int targetH = 720;
@@ -318,24 +325,24 @@ void MainWindow::on_startMeetingButton_clicked()
         targetFps = 20;
         targetBitrate = 900000;
     }
-
+    // 打开音频编码器（44100采样率，单声道）
     bool aok = false;
     QMetaObject::invokeMethod(audioEnc, [&]() {
         aok = audioEnc->open(44100, 1);
-    }, Qt::BlockingQueuedConnection);
+    }, Qt::BlockingQueuedConnection);//阻塞式排队调用—— 当前线程会等待audioEnc所在线程执行完open方法后，才继续执行后续代码，确保结果能正确返回；
     if (!aok) {
         qWarning() << "[Mainwindow] 音频编码器打开失败";
     }
-
+    // 打开视频编码器
     bool encOk = false;
     QMetaObject::invokeMethod(netEnc, [&]() {
         encOk = netEnc->openVideo(targetW, targetH, targetFps, targetBitrate);
     }, Qt::BlockingQueuedConnection);
     if (!encOk) {
-        qWarning() << "[Mainwindow] netEnc openVideo 失败";
+        qWarning() << "[Mainwindow] 视频编码器打开失败";
         return;
     }
-
+    //编码/推流链路连接
     disconnect(netEnc, &AvNetEncoder::videoPacketReady, pusher, nullptr);
     connect(netEnc, &AvNetEncoder::videoPacketReady, pusher, &RtmpPusher::pushEncodeVideo, Qt::QueuedConnection);
     disconnect(audioEnc, &AvAudioEncoder::audioPacketReady, pusher, nullptr);
@@ -343,11 +350,13 @@ void MainWindow::on_startMeetingButton_clicked()
 
     if (videoSendConn) disconnect(videoSendConn);
     videoSendConn = connect(videoWorker, &VideoCapture::frameCaptured, this, [this](const QImage &img) {
-        if (!netEnc) return;
+        //前置校验
+        if (!netEnc) return;    //编码实例不存在，直接返回
         auto queueDepthToken = videoQueueDepthToken;
-        if (!queueDepthToken) return;
+        if (!queueDepthToken) return;   //队列深度计数器不存在，直接返回
+        //本地视频开关处理（黑屏替换）
         QImage out = img;
-        if (!localVideoOn) {
+        if (!localVideoOn) {//localVideoOn 控制是否开启本地视频：关闭时不发送真实画面，改用同尺寸 / 格式的黑屏帧；
             static QImage blackFrame;
             if (blackFrame.size() != img.size() || blackFrame.format() != QImage::Format_RGB888) {
                 blackFrame = QImage(img.size(), QImage::Format_RGB888);
@@ -364,40 +373,42 @@ void MainWindow::on_startMeetingButton_clicked()
             }
             return;
         }
-
-        queueDepthToken->fetch_add(1, std::memory_order_relaxed);
-        QPointer<AvNetEncoder> encPtr(netEnc);
-        const bool queued = QMetaObject::invokeMethod(
+        //异步提交编码任务，队列深度+1（原子操作，线程安全）
+        queueDepthToken->fetch_add(1, std::memory_order_relaxed);   //队列计数+1
+        QPointer<AvNetEncoder> encPtr(netEnc);  //用QPointer包装编码实例，防止编码实例被销毁后野指针访问
+        const bool queued = QMetaObject::invokeMethod(//异步调用编码实例的pushVideoFrame方法
             netEnc,
             [encPtr, queueDepthToken, out]() {
-                if (encPtr) {
-                    encPtr->pushVideoFrame(out);
+                if (encPtr) {   //检查编码实例是否还存活
+                    encPtr->pushVideoFrame(out);    //提交帧到编码器
                 }
-                queueDepthToken->fetch_sub(1, std::memory_order_relaxed);
+                queueDepthToken->fetch_sub(1, std::memory_order_relaxed);//无论编码是否成功，计数-1（释放队列位置）
             },
-            Qt::QueuedConnection);
-        if (!queued) {
+            Qt::QueuedConnection);//异步执行，不阻塞当前线程
+        if (!queued) {  //如果任务提交失败，立即将计数-1，避免计数错误
             queueDepthToken->fetch_sub(1, std::memory_order_relaxed);
         }
     }, Qt::QueuedConnection);
-
+    //音频帧推送
     if (audioWorker) {
         if (audioSendConn) disconnect(audioSendConn);
         audioSendConn = connect(audioWorker, &AudioCapture::audioFrameReady, this, [this](const QByteArray &pcm) {
             if (!audioEnc) return;
-            QByteArray toSend = pcm;
-            if (!localAudioOn) {
+            QByteArray toSend = pcm;    //复制原始PCM音频数据到待发送变量
+            if (!localAudioOn) {    //如果本地音频被关闭（静音），将音频数据填充为全0（静音）
                 toSend.fill('\0');
             }
+            //异步调用音频编码器的pushPcm方法，将PCM数据推入编码器
+            //Q_ARG(QByteArray, toSend)：传递给 pushPcm 方法的参数，指定参数类型为 QByteArray，参数值为 toSend（即把 toSend 这个音频 PCM 数据传给 pushPcm 方法）。
             QMetaObject::invokeMethod(audioEnc, "pushPcm", Qt::QueuedConnection, Q_ARG(QByteArray, toSend));
         }, Qt::QueuedConnection);
     }
-
+    //启动RTMP推流
     bool rtmpOk = false;
     QMetaObject::invokeMethod(pusher, [&]() {
         pusher->setVideoParams(targetW, targetH, targetFps);
         pusher->setAudioParams(44100, 1);
-        rtmpOk = pusher->start(currentPushUrl, targetFps, 44100);
+        rtmpOk = pusher->start(currentPushUrl, targetFps, 44100);//启动RTMP推流，结果赋值给rtmpOk
     },Qt::BlockingQueuedConnection);
 
     if (!rtmpOk) {
@@ -415,6 +426,7 @@ void MainWindow::on_startMeetingButton_clicked()
     }
 }
 
+// 结束会议主流程：停止拉流/推流并按顺序回收线程与资源
 void MainWindow::on_stopMeetingButton_clicked()
 {
     if (stopMeetingInProgress) {
@@ -435,13 +447,13 @@ void MainWindow::on_stopMeetingButton_clicked()
     currentPushUrl.clear();
     adaptiveStressScore = 0;
     localScreenShareOn=false;
-    qInfo() << "[Mainwindow] stop meeting begin";
+    qInfo() << "[Mainwindow] 开始停止会议";
 
     if (signalConnected) {
         sendSignalUpdate();
     }
 
-    stopCurrentPull();
+    stopCurrentPull();//停止拉流
     qInfo() << "[Mainwindow] stop pull done";
 
     if (videoSendConn) disconnect(videoSendConn);
@@ -454,7 +466,7 @@ void MainWindow::on_stopMeetingButton_clicked()
 
     stopAudioCapture();
     qInfo() << "[Mainwindow] stop audio done";
-
+    //销毁拉流/推流/编码资源
     if (receiver) {
         disconnect(receiver, nullptr, this, nullptr);
         receiver->stop();
@@ -514,7 +526,7 @@ void MainWindow::on_stopMeetingButton_clicked()
     stopThreadAndDelete(videoThread, "videoThread", 3000);
     qInfo() << "[Mainwindow] stop videoThread done";
     videoWorker = nullptr;
-
+    //断开信令连接
     if (signalSocket) {
         disconnect(signalSocket, nullptr, this, nullptr);
         sendSignalLeave();
@@ -524,6 +536,7 @@ void MainWindow::on_stopMeetingButton_clicked()
     signalConnected = false;
     if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
     if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
+    //重置会议状态
     memberStates.clear();
     roomHostStream.clear();
     preferredRemoteStream.clear();
@@ -549,6 +562,7 @@ void MainWindow::on_stopMeetingButton_clicked()
     stopMeetingInProgress = false;
 }
 
+// 拍照：优先保存焦点远端画面，其次保存本地画面
 void MainWindow::on_captureImageButton_clicked()
 {
     const QString filename = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") + ".jpg";
@@ -574,6 +588,7 @@ void MainWindow::on_captureImageButton_clicked()
 
 
 
+// 启动音频采集线程并连接录制/发送链路
 void MainWindow::startAudioCapture()
 {
     if (!audioWorker) {
@@ -624,6 +639,7 @@ void MainWindow::startAudioCapture()
             );
 }
 
+// 停止音频采集并清理音频线程资源
 void MainWindow::stopAudioCapture()
 {
 
@@ -645,6 +661,7 @@ void MainWindow::stopAudioCapture()
     qDebug()<<"[Mainwindow] 音频采集已停止";
 }
 
+// 应用本地视频源（摄像头/屏幕共享）与目标帧率
 void MainWindow::applyLocalVideoSource()
 {
     if(!videoWorker||!videoThread||!videoThread->isRunning()) return;
@@ -668,6 +685,7 @@ void MainWindow::applyLocalVideoSource()
     qInfo()<<"[Share] local source="<<(mode==1?shareSourceName:"camera")<<"fps="<<targetFps;
 }
 
+// 将美颜参数同步到视频采集 worker
 void MainWindow::applyBeautyToWorker()
 {
     if(!videoWorker) return;
@@ -681,6 +699,7 @@ void MainWindow::applyBeautyToWorker()
     videoWorker->setBeautyEnabled(level>0&&style>0);
 }
 
+// 设置美颜模式与强度并刷新 UI 与日志
 void MainWindow::setBeautyMode(const QString &modeName, int level)
 {
     localBeautyMode=modeName;
@@ -718,6 +737,7 @@ void MainWindow::setBeautyMode(const QString &modeName, int level)
     }
 }
 
+// 初始化白板工具栏、权限按钮与交互绑定
 void MainWindow::setupWhiteboardUi()
 {
     if(whiteboardCanvasLabel){
@@ -786,6 +806,7 @@ void MainWindow::setupWhiteboardUi()
     ensureWhiteboardCanvas();
 }
 
+// 确保白板画布尺寸与容器匹配并完成重建
 void MainWindow::ensureWhiteboardCanvas()
 {
     if(!whiteboardCanvasLabel) return;
@@ -806,12 +827,14 @@ void MainWindow::ensureWhiteboardCanvas()
     updateWhiteboardCanvasLabel();
 }
 
+// 刷新白板画布显示
 void MainWindow::updateWhiteboardCanvasLabel()
 {
     if(!whiteboardCanvasLabel||whiteboardCanvas.isNull()) return;
     whiteboardCanvasLabel->setPixmap(QPixmap::fromImage(whiteboardCanvas));
 }
 
+// 将控件坐标映射到白板画布坐标
 QPoint MainWindow::mapWhiteboardPoint(const QPoint &widgetPos) const
 {
     if(!whiteboardCanvasLabel||whiteboardCanvas.isNull()) return QPoint();
@@ -825,6 +848,7 @@ QPoint MainWindow::mapWhiteboardPoint(const QPoint &widgetPos) const
     return QPoint(cx,cy);
 }
 
+// 读取当前白板颜色选择
 QColor MainWindow::whiteboardSelectedColor() const
 {
     if(whiteboardColorCombo){
@@ -834,12 +858,14 @@ QColor MainWindow::whiteboardSelectedColor() const
     return QColor("#e03131");
 }
 
+// 读取当前白板画笔粗细
 int MainWindow::whiteboardSelectedWidth() const
 {
     if(whiteboardWidthSpin) return qBound(1,whiteboardWidthSpin->value(),12);
     return 3;
 }
 
+// 判断当前用户是否有清空白板权限
 bool MainWindow::canClearWhiteboard() const
 {
     if(!signalConnected) return true;
@@ -847,6 +873,7 @@ bool MainWindow::canClearWhiteboard() const
     return canManageWhiteboard();
 }
 
+// 根据缓存笔迹全量重绘白板
 void MainWindow::redrawWhiteboardFromStrokes()
 {
     ensureWhiteboardCanvas();
@@ -866,6 +893,7 @@ void MainWindow::redrawWhiteboardFromStrokes()
     updateWhiteboardCanvasLabel();
 }
 
+// 按轨迹 ID 删除白板笔迹并刷新
 void MainWindow::removeStrokeById(const QString &strokeId, const QString &byStream)
 {
     if(strokeId.isEmpty()) return;
@@ -893,6 +921,7 @@ void MainWindow::removeStrokeById(const QString &strokeId, const QString &byStre
     }
 }
 
+// 撤销自己最近一笔白板轨迹
 void MainWindow::undoLastLocalStroke(bool broadcast)
 {
     for(int i=WhiteboardStrokes.size()-1;i>=0;--i){
@@ -906,6 +935,7 @@ void MainWindow::undoLastLocalStroke(bool broadcast)
     appendRoomEvent("没有可撤销的本地笔迹");
 }
 
+// 绘制白板线段并按需广播信令
 void MainWindow::drawWhiteboardLine(const QPoint &from,const QPoint &to,bool broadcast,
                                     const QColor &color,int width,const QString &strokeId,const QString &ownerStream)
 {
@@ -952,6 +982,7 @@ void MainWindow::drawWhiteboardLine(const QPoint &from,const QPoint &to,bool bro
     }
 }
 
+// 清空白板并按需广播清空消息
 void MainWindow::clearWhiteboard(bool broadcast, const QString &byStream)
 {
     ensureWhiteboardCanvas();
@@ -973,6 +1004,7 @@ void MainWindow::clearWhiteboard(bool broadcast, const QString &byStream)
     }
 }
 
+// 发送白板绘制信令
 void MainWindow::sendSignalWhiteboardDraw(const QPoint &from,const QPoint &to,
                                           const QColor &color,int width,const QString &strokeId)
 {
@@ -1001,6 +1033,7 @@ void MainWindow::sendSignalWhiteboardDraw(const QPoint &from,const QPoint &to,
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 发送白板清空信令
 void MainWindow::sendSignalWhiteboardClear()
 {
     if(!signalSocket||!signalConnected) return;
@@ -1018,6 +1051,7 @@ void MainWindow::sendSignalWhiteboardClear()
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 发送白板撤销信令
 void MainWindow::sendSignalWhiteboardUndo(const QString &strokeId)
 {
     if(!signalSocket||!signalConnected||strokeId.isEmpty()) return;
@@ -1036,6 +1070,7 @@ void MainWindow::sendSignalWhiteboardUndo(const QString &strokeId)
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 判断当前用户是否可写白板
 bool MainWindow::canWriteWhiteboard() const
 {
     if(!whiteboardLocked) return true;
@@ -1045,6 +1080,7 @@ bool MainWindow::canWriteWhiteboard() const
     return st.host||st.cohost;
 }
 
+// 判断当前用户是否可管理白板锁
 bool MainWindow::canManageWhiteboard() const
 {
     if(!signalConnected) return true;
@@ -1054,6 +1090,7 @@ bool MainWindow::canManageWhiteboard() const
     return st.host||st.cohost;
 }
 
+// 按权限与锁状态更新白板工具 UI
 void MainWindow::applyWhiteboardLockUi()
 {
     const bool canManage=canManageWhiteboard();
@@ -1073,6 +1110,7 @@ void MainWindow::applyWhiteboardLockUi()
     }
 }
 
+// 抓取焦点远端最近帧用于截图
 bool MainWindow::captureFocusedRemoteImage(QImage *outImage) const
 {
     if(!outImage) return false;
@@ -1085,6 +1123,7 @@ bool MainWindow::captureFocusedRemoteImage(QImage *outImage) const
     return !outImage->isNull();
 }
 
+// 发送白板锁定/解锁信令
 void MainWindow::sendSignalWhiteboardLock(bool locked)
 {
     if(!signalSocket||!signalConnected) return;
@@ -1101,13 +1140,15 @@ void MainWindow::sendSignalWhiteboardLock(bool locked)
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 加载本地登录偏好（账号/房间）
 void MainWindow::loadLoginPrefs()
 {
+    //创建QSettings对象，用于读写本地配置
     QSettings settings("SmartMeet", "SmartMeet");
     const bool remember = settings.value("auth/remember_user", true).toBool();
     const QString savedUser = settings.value("auth/last_user").toString().trimmed();
     const QString savedRoom = settings.value("auth/last_room").toString().trimmed();
-
+    //如果开启了"记住用户"且保存的账号不为空，就把保存的账号赋值给当前登录用户变量
     if (remember && !savedUser.isEmpty()) {
         loginUser = savedUser;
     }
@@ -1116,6 +1157,7 @@ void MainWindow::loadLoginPrefs()
     }
 }
 
+// 保存本地登录偏好（账号/房间）
 void MainWindow::saveLoginPrefs() const
 {
     QSettings settings("SmartMeet", "SmartMeet");
@@ -1129,6 +1171,7 @@ void MainWindow::saveLoginPrefs() const
     settings.setValue("auth/last_room", roomId);
 }
 
+// 创建并初始化登录遮罩层界面
 void MainWindow::setupLoginUi()
 {
     if (!ui || !ui->centralwidget || loginOverlay) return;
@@ -1241,6 +1284,7 @@ void MainWindow::setupLoginUi()
     loginOverlay->hide();
 }
 
+// 同步登录遮罩层几何位置
 void MainWindow::syncLoginOverlayGeometry()
 {
     if (!ui || !ui->centralwidget || !loginOverlay || !loginCard) return;
@@ -1260,6 +1304,7 @@ void MainWindow::syncLoginOverlayGeometry()
     loginOverlay->raise();
 }
 
+// 显示或隐藏登录遮罩并更新提示
 void MainWindow::showLoginOverlay(bool show, const QString &hint)
 {
     if (!loginOverlay) {
@@ -1289,6 +1334,7 @@ void MainWindow::showLoginOverlay(bool show, const QString &hint)
     }
 }
 
+// 触发登录/注册流程并发起信令连接
 void MainWindow::triggerLoginAction(bool registerFirst)
 {
     if (!loginUserEdit || !loginPasswordEdit || !loginRoomEdit) return;
@@ -1322,6 +1368,7 @@ void MainWindow::triggerLoginAction(bool registerFirst)
     on_startReceiveButton_clicked();
 }
 
+// 退出登录：断开信令并清理登录态
 void MainWindow::on_logoutButton_clicked()
 {
     appendRoomEvent("手动退出登录");
@@ -1360,6 +1407,7 @@ void MainWindow::on_logoutButton_clicked()
     showLoginOverlay(true, "已退出登录，请重新登录");
 }
 
+// 校验并补齐信令登录所需凭据
 bool MainWindow::ensureSignalCredential()
 {
     if (loginUser.isEmpty() && loginUserEdit) {
@@ -1385,6 +1433,7 @@ bool MainWindow::ensureSignalCredential()
     return true;
 }
 
+// 发送 auth_login 认证消息
 void MainWindow::sendSignalAuthLogin()
 {
     if (!signalSocket || !signalConnected) return;
@@ -1396,6 +1445,7 @@ void MainWindow::sendSignalAuthLogin()
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 发送 auth_register 注册消息
 void MainWindow::sendSignalAuthRegister()
 {
     if (!signalSocket || !signalConnected) return;
@@ -1407,212 +1457,8 @@ void MainWindow::sendSignalAuthRegister()
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 录制按钮入口：开始 AV 录制
 void MainWindow::on_startRecordButton_clicked()
-{
-    onDebugStartAVRecord();
-}
-
-void MainWindow::on_stopRecordButton_clicked()
-{
-    onDebugStopAVRecord();
-}
-
-void MainWindow::onDebugStartEmptyRecord()
-{
-    if(recorder&&recorder->isOpen()){
-        QMessageBox::information(this,"提示","录制器已打开");
-        return;
-    }
-    if(!recorder) recorder=new AvRecorder(this);
-
-    const QString filename="test_empty.mp4";
-    const int width = 640, height = 480, fps = 30;
-
-    if(!recorder->open(filename, width, height, fps)){
-        QMessageBox::warning(this,"错误","打开录制器失败，请查看控制台日志。");
-        return;
-    }
-    QMessageBox::information(this,"提示",QString("已创建文件头: %1").arg(filename));
-}
-
-void MainWindow::onDebugStopEmptyRecord()
-{
-    if(!recorder||!recorder->isOpen()){
-        QMessageBox::information(this,"提示","录制器未打开");
-        return;
-    }
-    recorder->close();
-    QMessageBox::information(this,"提示","已写入文件尾并关闭");
-}
-
-void MainWindow::onDebugGen3sTestVideo()
-{
-    // 1) 打开录制器
-    if(recorder&&recorder->isOpen()){
-        recorder->close();
-    }
-    if(!recorder) recorder=new AvRecorder(this);
-
-    const int W=640,H=480,FPS=30,DUR_SEC=3;
-    const int totalFrames=FPS*DUR_SEC;
-    const QString filename="test_video.mp4";
-
-    if(!recorder->open(filename,W,H,FPS)){
-        QMessageBox::warning(this,"错误","打开录制器失败(无法写入头部).");
-        return;
-    }
-
-    // 2) 生成3秒彩条测试画面并写入
-    QElapsedTimer timer;
-    const qint64 frameIntervalMs=1000/FPS;
-
-    // 预先分配可复用的QImage(避免重复分配)
-    QImage frame(W,H,QImage::Format_RGB888);
-    if(frame.isNull()){
-        QMessageBox::warning(this,"错误","创建QImage失败");
-        recorder->close();
-        return;
-    }
-
-    timer.start();
-    for(int i=0;i<totalFrames;++i){
-        // 2.1 生成彩色背景
-        {
-            QPainter p(&frame);
-            // 背景渐变/彩条
-            for(int y=0;y<H;++y){
-                int r=(y*3+i*5)%256;
-                int g=(y*5+i*3)%256;
-                int b=(y*7+i*2)%256;
-                // 画一条水平线
-                p.setPen(QColor(r,g,b));
-                p.drawLine(0,y,W-1,y);
-            }
-            // 画网格
-            p.setPen(QColor(255, 255, 255, 80));
-            for (int x = 0; x < W; x += 80) p.drawLine(x, 0, x, H);
-            for (int y = 0; y < H; y += 60) p.drawLine(0, y, W, y);
-
-            // 写时间戳与帧号
-            p.setPen(Qt::yellow);
-            p.setFont(QFont("Consolas", 18));
-            p.drawText(10, 30, QString("SmartMeet 测试  %1x%2 @ %3fps").arg(W).arg(H).arg(FPS));
-            p.drawText(10, 60, QString("帧: %1 / %2").arg(i+1).arg(totalFrames));
-        }
-
-        // 2.2 写入一帧
-        recorder->pushVideoFrame(frame);
-
-        // 2.3 简单帧率节流(避免写入过快)
-        const qint64 elapsed=timer.elapsed();
-        const qint64 target=(i+1)*frameIntervalMs;
-        if(elapsed<target){
-            QThread::msleep(static_cast<unsigned long>(target-elapsed));
-        }
-        // 处理UI事件，避免3秒卡顿
-        qApp->processEvents();
-    }
-
-    // 3) 关闭录制器(写入尾部并落盘)
-    recorder->close();
-
-    QMessageBox::information(this,"完成",QString("已生成 %1 (%2 秒)").arg(filename).arg(DUR_SEC));
-}
-
-void MainWindow::onDebugStartCamRecord()
-{
-    if(!videoWorker){
-        QMessageBox::warning(this,"错误","请先开始会议(打开摄像头)后再录制");
-        return;
-    }
-    if(camRecording){
-        QMessageBox::information(this,"提示","正在录制中");
-        return;
-    }
-    if(recorder&&recorder->isOpen()){
-        recorder->close();
-    }
-    if(!recorder) recorder=new AvRecorder(this);
-
-    // 录制参数: 建议与编码器open参数保持一致
-    const int W=640,H=480,FPS=30;
-    recFps=FPS;
-    lastPushMs=0;
-
-    const QString filename=QDateTime::currentDateTime().toString("'record_'yyyyMMdd_hhmmss'.mp4'");
-    if(!recorder->open(filename,W,H,FPS)){
-        QMessageBox::warning(this,"错误","录制器打开失败，请查看日志");
-        return;
-    }
-    camRecording=true;
-    QMessageBox::information(this,"提示",QString("开始录制 %1").arg(filename));
-}
-
-void MainWindow::onDebugStopCamRecord()
-{
-    if(!camRecording){
-        QMessageBox::information(this,"提示","当前没有进行中的录制");
-        return;
-    }
-    camRecording=false;
-
-    if(recorder&&recorder->isOpen()){
-        recorder->close();
-        QMessageBox::information(this,"提示","已停止并写入文件");
-    }else{
-        QMessageBox::information(this,"提示","录制器未打开");
-    }
-}
-
-void MainWindow::onDebugStartEmptyAV()
-{
-    if(recorder&&recorder->isOpen()){
-        recorder->close();
-    }
-    if(!recorder) recorder=new AvRecorder(this);
-
-    const int W=640,H=480,FPS=30,SR=44100;
-    const QString filename="test_empty_av.mp4";
-
-    if(!recorder->openAV(filename,W,H,FPS,SR)){
-        QMessageBox::warning(this,"错误","openAV失败，请查看控制台日志");
-        return;
-    }
-
-    recorder->close();
-    QMessageBox::information(this,"完成",QString("已创建(含空音轨+空视频轨): %1").arg(filename));
-}
-
-void MainWindow::onDebugStartAudioRecord()
-{
-    if(recorder&&recorder->isOpen()){
-        recorder->close();
-    }
-    if(!recorder) recorder=new AvRecorder(this);
-
-    const int SR=44100;// 采样率
-    const QString filename="test_audio_only.mp4";
-
-    // 仅音频
-    if(!recorder->openAV(filename,640,480,30,SR)){
-        QMessageBox::warning(this,"错误","openAV失败(音频初始化失败)");
-        return;
-    }
-
-    QMessageBox::information(this,"提示",QString("开始音频录制 %1").arg(filename));
-}
-
-void MainWindow::onDebugStopAudioRecord()
-{
-    if(!recorder||!recorder->isOpen()){
-        QMessageBox::information(this,"提示","录制器未打开");
-        return;
-    }
-    recorder->close();
-    QMessageBox::information(this,"提示","已写入文件尾并关闭");
-}
-
-void MainWindow::onDebugStartAVRecord()
 {
     if(recorder&&recorder->isOpen()){
         recorder->close();
@@ -1635,7 +1481,8 @@ void MainWindow::onDebugStartAVRecord()
     QMessageBox::information(this,"提示",QString("开始AV录制: %1").arg(filename));
 }
 
-void MainWindow::onDebugStopAVRecord()
+// 录制按钮入口：停止 AV 录制
+void MainWindow::on_stopRecordButton_clicked()
 {
     if(recorder&&recorder->isOpen()){
         recorder->close();
@@ -1645,6 +1492,8 @@ void MainWindow::onDebugStopAVRecord()
     isRecording=false;
 }
 
+
+// 初始化弱网自适应恢复定时器
 void MainWindow::setupAdaptiveNetworkControl()
 {
     if (adaptiveRecoverTimer) return;
@@ -1656,6 +1505,7 @@ void MainWindow::setupAdaptiveNetworkControl()
     adaptiveRecoverTimer->start();
 }
 
+// 应用网络自适应档位并按需重建推流链路
 void MainWindow::applyAdaptiveProfile(int level, bool restartPipeline)
 {
     static const PublishProfile kProfiles[] = {
@@ -1717,6 +1567,7 @@ void MainWindow::applyAdaptiveProfile(int level, bool restartPipeline)
     updateMeetingStatsUi();
 }
 
+// 记录网络异常并触发降档策略
 void MainWindow::handleNetworkIssue(const QString &reason, int weight)
 {
     if (meetingStopped || !isPublishing) return;
@@ -1736,6 +1587,7 @@ void MainWindow::handleNetworkIssue(const QString &reason, int weight)
     }
 }
 
+// 网络稳定后尝试逐级恢复档位
 void MainWindow::tryRecoverAdaptiveProfile()
 {
     if (meetingStopped || !isPublishing) return;
@@ -1750,6 +1602,7 @@ void MainWindow::tryRecoverAdaptiveProfile()
     applyAdaptiveProfile(adaptiveProfileLevel - 1, true);
 }
 
+// 初始化会中统计栏与刷新定时器
 void MainWindow::setupMeetingStatsUi()
 {
     meetingStatsLabel = findChild<QLabel*>("meetingStatsLabel");
@@ -1767,6 +1620,7 @@ void MainWindow::setupMeetingStatsUi()
     updateMeetingStatsUi();
 }
 
+// 刷新会中统计文本
 void MainWindow::updateMeetingStatsUi()
 {
     struct ProfileView {
@@ -1805,6 +1659,7 @@ void MainWindow::updateMeetingStatsUi()
     }
 }
 
+// 导出最近会中事件日志到文本文件
 void MainWindow::exportRecentMeetingLogs()
 {
     if (recentEventLogs.isEmpty()) {
@@ -1839,6 +1694,7 @@ void MainWindow::exportRecentMeetingLogs()
     appendRoomEvent(QString("会中日志已导出：%1").arg(filePath));
 }
 
+// 重置信令重连计数和计时器状态
 void MainWindow::resetSignalReconnectState()
 {
     signalReconnectAttempt = 0;
@@ -1847,6 +1703,7 @@ void MainWindow::resetSignalReconnectState()
     }
 }
 
+// 按指数退避策略安排信令重连
 void MainWindow::scheduleSignalReconnect(const QString &reason)
 {
     if (manualSignalDisconnect || meetingStopped || shuttingDown) return;
@@ -1873,6 +1730,7 @@ void MainWindow::scheduleSignalReconnect(const QString &reason)
     signalReconnectTimer->start(delayMs);
 }
 
+// 建立 WebSocket 信令连接并绑定回调
 void MainWindow::openSignalConnection()
 {
     if (!signalSocket) {
@@ -1901,6 +1759,7 @@ void MainWindow::openSignalConnection()
 }
 
 
+// 连接信令按钮逻辑：连接或手动断开
 void MainWindow::on_startReceiveButton_clicked()
 {
     const bool connectedOrConnecting =
@@ -1935,6 +1794,7 @@ void MainWindow::on_startReceiveButton_clicked()
     qInfo() << "[Mainwindow] 接收端已启动(信令)";
 }
 
+// 初始化房间成员/事件/聊天等信令面板控件
 void MainWindow::setupSignalUi()
 {
     if (roomDock && roomUserList && roomEventLog && signalStateLabel && roomCountLabel &&
@@ -2041,6 +1901,7 @@ void MainWindow::setupSignalUi()
     connect(roomUserList, &QListWidget::customContextMenuRequested, this, &MainWindow::onRoomListContextMenu, Qt::UniqueConnection);
 }
 
+// 初始化底部菜单（美颜、更多、自控动作）
 void MainWindow::setupBottomMenus()//聊天面板入口
 {
     beautyStrengthSlider=findChild<QSlider*>("beautyStrengthSlider");
@@ -2174,6 +2035,7 @@ void MainWindow::setupBottomMenus()//聊天面板入口
     refreshSelfControlActions();
 }
 
+// 刷新本端麦克风/摄像头/共享动作文案
 void MainWindow::refreshSelfControlActions()
 {
     if (selfMicToggleAction) {
@@ -2194,6 +2056,7 @@ void MainWindow::refreshSelfControlActions()
     applyWhiteboardLockUi();
 }
 
+// 统一处理聊天回车、白板绘制、宫格双击等事件
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == chatInputEdit && event->type() == QEvent::KeyPress) {
@@ -2347,6 +2210,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     return QMainWindow::eventFilter(watched, event);
 }
 
+// 初始化远端宫格与焦点预览页面
 void MainWindow::setupRemoteGridUi()
 {
     if (!ui || !ui->centralwidget || !ui->remoteVideolabel) return;
@@ -2440,6 +2304,7 @@ void MainWindow::setupRemoteGridUi()
     remoteContainer->show();
 }
 
+// 同步远端展示容器在主界面的几何
 void MainWindow::syncRemoteContainerGeometry()
 {
     if (!remoteContainer || !ui) return;
@@ -2455,6 +2320,7 @@ void MainWindow::syncRemoteContainerGeometry()
     remoteContainer->raise();
 }
 
+// 根据成员状态刷新远端宫格卡片内容
 void MainWindow::refreshRemoteTiles()
 {
     if (remoteTiles.isEmpty()) return;
@@ -2581,6 +2447,7 @@ void MainWindow::refreshRemoteTiles()
     }
 }
 
+// 将指定流的帧渲染到对应宫格卡片
 void MainWindow::applyTileFrame(const QString &stream, const QImage &img)
 {
     if (stream.isEmpty()) return;
@@ -2597,6 +2464,7 @@ void MainWindow::applyTileFrame(const QString &stream, const QImage &img)
     tile.hasFrame = true;
 }
 
+// 清空全部宫格画面并恢复占位文本
 void MainWindow::clearAllTileFrames()
 {
     for (auto &tile : remoteTiles) {
@@ -2618,6 +2486,7 @@ void MainWindow::clearAllTileFrames()
     updateFocusStatusBadge();
 }
 
+// 更新焦点状态浮层文本与显示状态
 void MainWindow::updateFocusStatusBadge()
 {
     if (!focusStatusLabel) return;
@@ -2642,6 +2511,7 @@ void MainWindow::updateFocusStatusBadge()
     focusStatusLabel->raise();
 }
 
+// 确保房间号/用户号/流 ID 已生成
 bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
 {
     if (roomId.isEmpty() && loginRoomEdit) {
@@ -2666,6 +2536,7 @@ bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
     return true;
 }
 
+// 追加系统事件到日志与聊天系统消息
 void MainWindow::appendRoomEvent(const QString &text)
 {
     const QString msg = QString("[%1] %2")
@@ -2685,6 +2556,7 @@ void MainWindow::appendRoomEvent(const QString &text)
     qInfo() << msg;
 }
 
+// 重建成员列表并联动宫格与拉流
 void MainWindow::refreshRoomUserList()
 {
     if (!roomUserList) return;
@@ -2801,6 +2673,7 @@ void MainWindow::refreshRoomUserList()
     syncGridPullers();
 }
 
+// 发送入会消息 join
 void MainWindow::sendSignalJoin()
 {
     if (!signalAuthed) {
@@ -2824,6 +2697,7 @@ void MainWindow::sendSignalJoin()
     appendRoomEvent(QString("已加入房间 %1，用户 %2").arg(roomId, selfStream));
 }
 
+// 发送离会消息 leave
 void MainWindow::sendSignalLeave()
 {
     if (!signalSocket || signalSocket->state() != QAbstractSocket::ConnectedState) return;
@@ -2835,6 +2709,7 @@ void MainWindow::sendSignalLeave()
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 发送成员状态更新 update
 void MainWindow::sendSignalUpdate()
 {
     if (!signalSocket || !signalConnected) return;
@@ -2851,6 +2726,7 @@ void MainWindow::sendSignalUpdate()
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 发送主持控制命令 cmd
 void MainWindow::sendSignalCmd(const QString &toStream, const QString &action)
 {
     if (!signalSocket || !signalConnected || toStream.isEmpty() || action.isEmpty()) return;
@@ -2864,6 +2740,7 @@ void MainWindow::sendSignalCmd(const QString &toStream, const QString &action)
     qInfo() << "[SignalCmd] room=" << roomId << "to=" << toStream << "action=" << action;
 }
 
+// 发送聊天消息 chat
 void MainWindow::sendSignalChat(const QString &content)
 {
     if(!signalSocket||!signalConnected) return;
@@ -2884,6 +2761,7 @@ void MainWindow::sendSignalChat(const QString &content)
     signalSocket->sendTextMessage(QJsonDocument(obj).toJson(QJsonDocument::Compact));
 }
 
+// 弹出共享源选择并应用到当前会话
 void MainWindow::chooseShareSource()
 {
     const auto candidates=buildShareSourceCandidates();
@@ -2922,6 +2800,7 @@ void MainWindow::chooseShareSource()
     refreshSelfControlActions();
 }
 
+// 构建可共享的屏幕/窗口候选列表
 QVector<MainWindow::ShareSourceCandidate> MainWindow::buildShareSourceCandidates() const
 {
     QVector<ShareSourceCandidate> out;
@@ -2953,6 +2832,7 @@ QVector<MainWindow::ShareSourceCandidate> MainWindow::buildShareSourceCandidates
     return out;
 }
 
+// 追加聊天消息并进行 msg_id 去重
 void MainWindow::appendChatMessage(const QString &fromStream, const QString &content, qint64 tsMs, bool isSelf, const QString &msgId)
 {
     if(content.trimmed().isEmpty()) return;
@@ -2980,6 +2860,7 @@ void MainWindow::appendChatMessage(const QString &fromStream, const QString &con
     qInfo()<<"[chat]"<<line;
 }
 
+// 信令连接成功后的登录/状态同步入口
 void MainWindow::onSignalConnected()
 {
     if (shuttingDown) return;
@@ -3010,6 +2891,7 @@ void MainWindow::onSignalConnected()
     updateMeetingStatsUi();
 }
 
+// 信令断开后的状态清理与重连调度
 void MainWindow::onSignalDisconnected()
 {
     signalAuthed = false;
@@ -3050,6 +2932,7 @@ void MainWindow::onSignalDisconnected()
     updateMeetingStatsUi();
 }
 
+// 信令消息分发中心（认证/成员/控制/聊天/白板）
 void MainWindow::onSignalTextMessage(const QString &msg)
 {
     if (shuttingDown) return;
@@ -3319,6 +3202,7 @@ void MainWindow::onSignalTextMessage(const QString &msg)
     }
 }
 
+// 双击成员列表项：进入焦点并拉流
 void MainWindow::onRoomUserDoubleClicked(QListWidgetItem *item)
 {
     if (!item) return;
@@ -3339,6 +3223,7 @@ void MainWindow::onRoomUserDoubleClicked(QListWidgetItem *item)
     refreshRemoteTiles();
 }
 
+// 成员右键菜单：主持控制与全体管理
 void MainWindow::onRoomListContextMenu(const QPoint &pos)
 {
     if (!roomUserList) return;
@@ -3497,6 +3382,7 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
     }
 }
 
+// 发送聊天输入框内容
 void MainWindow::onSendChatClicked()
 {
     if(!chatInputEdit) return;
@@ -3520,6 +3406,7 @@ void MainWindow::onSendChatClicked()
     chatInputEdit->clear();
 }
 
+// 获取当前应保持拉流显示的 stream 列表
 QStringList MainWindow::currentDisplayStreams() const
 {
     QStringList streams;
@@ -3531,6 +3418,7 @@ QStringList MainWindow::currentDisplayStreams() const
     return streams;
 }
 
+// 应用焦点音频路由（仅焦点流出声）
 void MainWindow::applyFocusAudioRouting()
 {
     for (auto it = pullSessions.begin(); it != pullSessions.end(); ++it) {
@@ -3541,6 +3429,7 @@ void MainWindow::applyFocusAudioRouting()
     }
 }
 
+// 确保目标流拉流会话存在并启动
 void MainWindow::ensurePullSession(const QString &stream)
 {
     if (stream.isEmpty()) return;
@@ -3638,6 +3527,7 @@ void MainWindow::ensurePullSession(const QString &stream)
     appendRoomEvent(QString("开始拉流: %1").arg(stream));
 }
 
+// 停止并销毁指定拉流会话
 void MainWindow::stopPullSession(const QString &stream, bool waitForQuit)
 {
     PullSession *sess = pullSessions.value(stream, nullptr);
@@ -3680,6 +3570,7 @@ void MainWindow::stopPullSession(const QString &stream, bool waitForQuit)
     delete sess;
 }
 
+// 停止并销毁全部拉流会话
 void MainWindow::stopAllPullSessions(bool waitForQuit)
 {
     const QStringList keys = pullSessions.keys();
@@ -3688,6 +3579,7 @@ void MainWindow::stopAllPullSessions(bool waitForQuit)
     }
 }
 
+// 按宫格需要增减拉流会话并应用音频路由
 void MainWindow::syncGridPullers()
 {
     if (!signalConnected || meetingStopped) {
@@ -3710,6 +3602,7 @@ void MainWindow::syncGridPullers()
     applyFocusAudioRouting();
 }
 
+// 进入焦点模式并启动目标流拉取
 void MainWindow::startPullStream(const QString &stream)
 {
     if (stream.isEmpty()) return;
@@ -3723,6 +3616,7 @@ void MainWindow::startPullStream(const QString &stream)
     applyFocusAudioRouting();
 }
 
+// 停止当前所有拉流并清空主流标记
 void MainWindow::stopCurrentPull(bool waitForQuit)
 {
     stopAllPullSessions(waitForQuit);

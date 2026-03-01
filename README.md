@@ -1,13 +1,6 @@
 ﻿# SmartMeet（产品需求与研发说明）
 
-基于 **Qt 6 + FFmpeg + OpenCV + ZLMediaKit** 的多平台视频会议与远程教学系统（定位：类腾讯会议）。
-
-本文件用于统一：
-- 产品目标与边界
-- 架构与模块拆分
-- 当前已实现能力
-- 本地/云端部署流程
-- 回归测试与后续研发路线
+基于 **Qt 6 + FFmpeg + OpenCV + ZLMediaKit** 的多平台视频会议与远程教学系统。
 
 ---
 
@@ -15,8 +8,8 @@
 | 项 | 内容 |
 |---|---|
 | 文档名称 | SmartMeet 产品需求与研发说明 |
-| 当前版本 | v0.3（M4 进行中，补充面试版上云清单） |
-| 更新日期 | 2026-02-19 |
+| 当前版本 | v0.4（M2~M5 基线已打通，进入收口阶段） |
+| 更新日期 | 2026-02-27 |
 | 适用对象 | 开发、测试、面试展示、部署运维 |
 | 代码基线 | SmartMeet + signalTest（独立信令服务） |
 
@@ -26,7 +19,7 @@
 - 交付 Windows `.exe` 客户端，支持 2-6 人远程视频会议。
 - 使用 ZLMediaKit 作为媒体服务，先跑通本地稳定链路，再演进至标准 WebRTC/SFU。
 - 模块化设计，低耦合、高内聚，后续可扩展到教学与协作场景。
-- 作为面试级项目，覆盖音视频、网络、UI、并发、权限控制、部署文档等完整能力。
+- 覆盖音视频、网络、UI、并发、权限控制、部署文档等完整能力。
 
 ---
 
@@ -81,17 +74,14 @@
   - 双击卡片焦点放大。
   - 音频仅焦点流输出，避免混音干扰。
 
-### 模块三及以后（规划中）
-- 会议内聊天。
-- 屏幕共享可用化。
-- 白板/批注。
-- 课堂与管理扩展（登录、角色体系、记录归档）。
+### 模块三至五（基线已实现，进入收口）
+- 会议内聊天：已可用（文本消息、系统消息、基本历史显示）。
+- 屏幕共享与白板：已可用（共享源切换、白板绘制/撤销/清空/锁定）。
+- 登录与权限：已可用（注册/登录、主持人/联席主持控制）。
+- 会议事件归档：已落地 SQLite（`meeting_events`）。
+- 当前主要工作从“补功能”转为“收口稳定、配置化、部署化”。
 
-#### 模块三及以后详细开发路线（强约束）
-> 说明：从本节开始作为后续开发“唯一执行顺序”。  
-> 原则：**前一阶段未达到验收标准，不进入下一阶段**。  
-> 原则：**每阶段结束必须完成回归记录并更新 README 状态**。
-
+#### 模块三及以后详细开发路线
 | 阶段 | 目标 | 主要交付 | 进入条件 | 验收标准 |
 |---|---|---|---|---|
 | M3 | 会议聊天与消息中心 | 会中聊天、系统消息、消息历史 | M2 稳定版通过回归 | 双实例聊天稳定，无丢消息、无崩溃 |
@@ -187,7 +177,7 @@ M5 验收标准：
   - 人脸 ROI 处理（避免全帧重算）；
   - 帧间平滑与参数防抖（避免画面闪烁）；
   - 在弱网与高负载下自动降级美颜强度（优先保通话稳定）。
-  - 面试版云端部署基线：**1 台 Linux 云服务器部署 ZLMediaKit + signal 服务 + SQLite 数据文件**。
+  - 云端部署基线：**1 台 Linux 云服务器部署 ZLMediaKit + signal 服务 + SQLite 数据文件**。
 
 M6 验收标准：
 - 连续运行 30 分钟无崩溃。
@@ -210,7 +200,7 @@ M7 验收标准：
 
 ---
 
-## 模块划分（总规划，不删原方案）
+## 模块划分
 
 ### 1) 音视频采集与播放（FFmpeg + Qt + OpenCV）
 - 摄像头视频与麦克风音频采集。
@@ -247,13 +237,13 @@ M7 验收标准：
 - 文本聊天（QTcpSocket/QUdpSocket 或 WebSocket）。
 - 表情、时间戳、消息记录。
 - 数据库保存（MySQL/SQLite）。
-- 状态：**下一模块优先项**。
+- 状态：**基线已完成（文本聊天可用），增强项待迭代**。
 
 ### 6) 登录与权限
 - 注册/登录（密码哈希存储）。
 - 角色：学生/老师/管理员。
 - 会话记录、课程记录存档。
-- 状态：**规划中**。
+- 状态：**基线已完成（SQLite + 权限控制），MySQL 迁移待实现**。
 
 ### 7) 多线程与性能
 - 采集/编码/解码/网络/UI 分线程运行。
@@ -272,10 +262,10 @@ M7 验收标准：
 ## 技术栈
 - Qt 6（Qt Creator + Qt Designer）
 - FFmpeg 7.1.1（新 API：`ch_layout`）
-- OpenCV 4.x
+- OpenCV 4..8.0-windows
 - ZLMediaKit（当前主链路 RTMP；目标支持 WebRTC/SFU）
 - WebSocket 信令（当前 `signalTest`）
-- MySQL/SQLite（后续）
+- MySQL/SQLite（当前 SQLite）
 - QThread / 线程同步与生命周期管理
 
 ---
@@ -303,8 +293,8 @@ M7 验收标准：
 ---
 
 ## 非功能性指标（SLO）
-- 入会体验：点击“连接信令”到收到成员列表，目标 `<= 3s`（本地环境）。
-- 首帧时延：点击开始拉流到首帧显示，目标 `<= 5s`（本地环境）。
+- 入会体验：点击“连接信令”到收到成员列表，目标 `<= 3s`。
+- 首帧时延：点击开始拉流到首帧显示，目标 `<= 5s`。
 - 焦点切换：双击切焦点到主画面更新，目标 `<= 1s`。
 - 音画同步：主观可接受，目标 A/V 偏差 `<= 150ms`。
 - 稳定性：连续运行 30 分钟无崩溃、无线程析构错误。
@@ -328,7 +318,7 @@ M7 验收标准：
 | `members` | `type, room, members, ts, ver` | 服务端广播成员快照 |
 | `cmd` | `type, room, to, action, from, ts, ver` | 主持控制类指令 |
 | `ctrl` | `type, to, action, by, ts, ver` | 服务端下发控制结果 |
-| `chat`（M3） | `type, room, user, stream, content, msg_id, ts, ver` | 聊天消息 |
+| `chat` | `type, room, user, stream, content, msg_id, ts, ver` | 聊天消息 |
 | `ack`（可选） | `type, req_id, ok, code, msg, ts, ver` | 指令确认/失败原因 |
 
 ---
@@ -344,7 +334,7 @@ M7 验收标准：
 
 ---
 
-## 角色与权限矩阵（当前实现）
+## 角色与权限矩阵
 
 | 操作 | 成员 | 联席主持 | 主持人 |
 |---|---|---|---|
@@ -368,26 +358,88 @@ M7 验收标准：
 
 ---
 
-## 演示流程（当前可执行）
+## 演示流程
 连接信令 -> 加入房间 -> 开始会议推流 -> 成员列表同步 -> 宫格拉流 -> 双击焦点放大 -> 主持控制 -> AV 录制 -> 结束会议
 
 ---
 
-## 里程碑建议（含当前状态）
+## 里程碑
 - M0：本地采集 + 预览（✅）
 - M1：推流到 ZLM + 两端拉流显示（✅）
 - M2：多用户房间 + 主持管理 + 宫格焦点（✅）
-- M3：聊天与消息中心（⏳ 当前下一目标）
-- M4：屏幕共享 + 白板批注 + 美颜 V1（⏳）
-- M5：登录、权限、会议归档（⏳）
+- M3：聊天与消息中心（✅ 基线已通过）
+- M4：屏幕共享 + 白板批注 + 美颜 V1（✅ 基线已通过，效果待优化）
+- M5：登录、权限、会议归档（✅ 基线已通过，数据库与运维待增强）
 - M6：稳定性与弱网优化 + 美颜 V2（⏳）
 - M7：WebRTC 主链路迁移（⏳）
+
+当前执行策略：
+- 先做收口，不跨大模块新增功能。
+- 优先级：`收口稳定 > 配置化 > SQLite/MySQL 双栈 > WebRTC 预研`。
 
 里程碑执行规则：
 - 规则 1：不跨阶段开发。不得在 M3 未完成时提前开发 M5 业务逻辑。
 - 规则 2：每个阶段至少一次“单实例 + 双实例 + 主持控制”回归通过。
 - 规则 3：每个阶段结束必须更新 README 的“当前实现状态”和“回归结果”。
 - 规则 4：若阶段内出现 P0/P1 稳定性问题，优先修复，不新增功能。
+
+---
+
+## 收口与演进规划（当前主线）
+### 什么是“只做收口不加新功能”
+- 定义：不再扩新业务面，只把已有功能做到“稳定可演示、可部署、可维护”。
+- 目标：避免功能越做越散，保证面试展示时链路完整且稳定。
+- 典型收口项：
+  - 崩溃/卡顿/线程泄漏清零；
+  - 地址与参数配置化；
+  - README 与代码状态一致；
+  - 回归清单固化并可复跑。
+
+### “服务器地址硬编码，未做配置化”是什么意思
+- 现状：信令地址、RTMP 推拉流地址写死在客户端代码中。
+- 问题：
+  - 换环境必须改代码并重编译；
+  - 无法快速切换本地/测试/生产；
+  - 容易漏改导致联调失败。
+- 目标改法：
+  - 引入 `config.ini`（或设置页）读取 `signal_url`、`rtmp_host`；
+  - 启动时加载，UI 可显示当前生效地址；
+  - 保留默认值，支持覆盖。
+
+### SQLite -> MySQL 要做什么（复杂度：中等）
+- 1) 连接层可切换：
+  - 统一数据库初始化入口，支持 `QSQLITE/QMYSQL`；
+  - 把连接参数（host/port/db/user/password）放配置文件。
+- 2) 建表与索引脚本分离：
+  - SQLite 建表脚本；
+  - MySQL 建表脚本（字符集/索引语法按 MySQL）。
+- 3) SQL 方言兼容处理：
+  - 时间函数、自增、占位符、唯一键冲突处理。
+- 4) 迁移脚本与回滚：
+  - 从 SQLite 导出核心表，导入 MySQL；
+  - 保留 SQLite 作为回退路径。
+- 5) 联调验收：
+  - 注册/登录；
+  - meeting_events 写入；
+  - 主持控制与聊天不回归。
+
+### WebRTC 主链路怎么做（复杂度：高）
+- 核心难点：
+  - SDP/ICE 协商；
+  - STUN/TURN 与 NAT 穿透；
+  - 网络抖动下的稳定性与回退策略。
+- 建议做法：
+  - 先做 PoC，不替换 RTMP 主链；
+  - 跑通“1 路发布 + 1 路拉流”最小闭环；
+  - 再做多人房间与权限兼容；
+  - 最后增加 RTMP/RTC 模式开关。
+
+### 执行优先级（建议）
+- P0（1~2 天）：收口稳定 + 地址配置化 + 文档对齐。
+- P1（2~3 天）：数据库可切换（SQLite/MySQL 双栈）。
+- P2（1~2 天）：MySQL 部署与迁移脚本。
+- P3（2~4 天）：美颜 V2（ROI + 防抖 + 弱网降级）。
+- P4（1~2 周）：WebRTC PoC，再评估是否迁移主链。
 
 ---
 
@@ -442,11 +494,11 @@ RTMP 可作为旁路直播/录制通道，会议主链路目标仍是 WebRTC + S
 
 ---
 
-## 服务器部署（建议阿里云）
+## 服务器部署（阿里云）
 建议配置（2-6 人会议）：
 - 2 核 4G / 5Mbps 起步（人数增加时提高带宽）。
 - Linux（CentOS/Ubuntu）。
-- 固定公网 IP + 域名（推荐）。
+- 固定公网 IP + 域名。
 
 重点配置：
 - ZLMediaKit：
@@ -462,10 +514,10 @@ RTMP 可作为旁路直播/录制通道，会议主链路目标仍是 WebRTC + S
 ---
 
 ## 面试版部署拓扑（推荐，1 台服务器即可）
-适用场景：你当前项目用于上线演示与面试，在线人数少（2-6 人），优先追求“可交付、可演示、可讲清楚”。
+适用场景：当前项目用于上线演示与面试，在线人数少（2-6 人）。
 
-- 服务器数量：`1 台` 即可（无需一开始多机拆分）。
-- 操作系统：`Ubuntu 22.04 LTS`（推荐）或 `Ubuntu 24.04 LTS`。
+- 服务器数量：`1 台` 。
+- 操作系统：`Ubuntu 22.04 LTS`。
 同机部署组件：
 - `ZLMediaKit`：媒体服务（RTMP，后续可扩 WebRTC）。
 - `signalTest`（或后续 signal 服务）：房间与权限信令。
@@ -506,6 +558,147 @@ RTMP 可作为旁路直播/录制通道，会议主链路目标仍是 WebRTC + S
    - `./MediaServer -c ../conf/config.ini`
 5. 配置防火墙/安全组后重启服务。
 6. 客户端把地址替换为公网 IP/域名做外网测试。
+
+---
+
+## 云端实操命令清单（按当前项目已验证）
+> 下面命令基于你当前环境验证通过：`Ubuntu 22.04 + ECS + ZLM + signalTest(systemd)`。
+
+### 1) Windows 连接 ECS
+```powershell
+# 如果你本机 ~/.ssh/config 有格式问题，强制忽略本地 config
+ssh -F NUL root@<ECS公网IP>
+```
+
+### 2) 服务器安装依赖（Ubuntu）
+```bash
+apt update
+apt install -y software-properties-common
+add-apt-repository -y universe
+apt update
+apt install -y build-essential cmake git pkg-config libssl-dev zlib1g-dev libevent-dev \
+  libgl1-mesa-dev libopengl-dev \
+  qt6-base-dev qt6-base-dev-tools libqt6websockets6-dev libqt6sql6-sqlite
+```
+
+### 3) 编译 ZLMediaKit
+```bash
+mkdir -p /opt
+cd /opt
+git clone --recursive https://github.com/ZLMediaKit/ZLMediaKit.git
+cd /opt/ZLMediaKit
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j"$(nproc)"
+find /opt/ZLMediaKit -type f -name MediaServer
+```
+
+### 4) 准备 ZLM 配置并启动
+```bash
+mkdir -p /opt/smartmeet/zlm
+cp /opt/ZLMediaKit/release/linux/Release/config.ini /opt/smartmeet/zlm/config.ini
+
+# 按你的安全组端口改配置（示例：HTTP 8080，RTMP 1935）
+nano /opt/smartmeet/zlm/config.ini
+```
+
+`zlm.service`：
+```bash
+cat >/etc/systemd/system/zlm.service <<'EOF'
+[Unit]
+Description=ZLMediaKit MediaServer
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/ZLMediaKit/release/linux/Release/MediaServer -c /opt/smartmeet/zlm/config.ini
+WorkingDirectory=/opt/ZLMediaKit/release/linux/Release
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now zlm
+systemctl status zlm --no-pager
+```
+
+### 5) 上传并编译 signalTest
+在 Windows PowerShell：
+```powershell
+scp -F NUL -r D:\QTcoding\signalTest root@<ECS公网IP>:/opt/smartmeet/
+```
+
+在 ECS：
+```bash
+cd /opt/smartmeet/signalTest
+rm -rf build
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j"$(nproc)"
+./signalTest
+```
+看到 `Signal server listening on ws://0.0.0.0:9001` 说明可用，`Ctrl+C` 退出后继续配 systemd。
+
+`smartmeet-signal.service`：
+```bash
+cat >/etc/systemd/system/smartmeet-signal.service <<'EOF'
+[Unit]
+Description=SmartMeet Signal Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/smartmeet/signalTest/build
+ExecStart=/opt/smartmeet/signalTest/build/signalTest
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now smartmeet-signal
+systemctl status smartmeet-signal --no-pager
+```
+
+### 6) 端口连通自检
+Windows PowerShell：
+```powershell
+Test-NetConnection <ECS公网IP> -Port 1935
+Test-NetConnection <ECS公网IP> -Port 8080
+Test-NetConnection <ECS公网IP> -Port 9001
+```
+三个 `TcpTestSucceeded : True` 才算基础链路 OK。
+
+### 7) 服务运维常用命令
+```bash
+# 状态
+systemctl status zlm --no-pager
+systemctl status smartmeet-signal --no-pager
+
+# 重启
+systemctl restart zlm
+systemctl restart smartmeet-signal
+
+# 开机自启检查
+systemctl is-enabled zlm
+systemctl is-enabled smartmeet-signal
+
+# 实时日志
+journalctl -u zlm -f -n 100 -l
+journalctl -u smartmeet-signal -f -n 100 -l
+```
+
+### 8) 这套环境的关键排障
+- SSH 报 `~/.ssh/config line ...`：用 `ssh -F NUL ...`。
+- CMake 报 `Qt6Gui ... WrapOpenGL could not be found`：安装 `libopengl-dev libgl1-mesa-dev`。
+- signal 服务突然退出：先看 `journalctl -u smartmeet-signal -n 200 -l` 是否有断言或权限错误。
+- 只要本地单机验证通过，公网仍失败：优先检查安全组和实例内防火墙端口是否一致。
 
 ---
 

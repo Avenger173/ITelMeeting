@@ -11,11 +11,11 @@ int main(int argc, char *argv[])
 
     QObject::connect(&a, &QCoreApplication::aboutToQuit, window, [window]() {
         if (!window) return;
-        // Run one explicit stop path before app shutdown.
+        // 应用退出前，显示调用窗口的on_stopMeetingButton_clicked方法
         QMetaObject::invokeMethod(window, "on_stopMeetingButton_clicked", Qt::DirectConnection);
     });
 
-    const int rc = a.exec();
-    // Avoid complex teardown at process end; OS reclaims memory.
+    const int rc = a.exec();//阻塞，直到应用退出
+    //操作系统自动回收内存
     return rc;
 }
