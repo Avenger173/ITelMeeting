@@ -546,6 +546,13 @@ void MainWindow::on_stopMeetingButton_clicked()
     if (focusPreviewFullScreen) {
         focusPreviewFullScreen = false;
         showNormal();
+        if (roomDock) roomDock->show();
+        if (auto *topBar = findChild<QWidget*>("topBarFrame")) topBar->show();
+        if (auto *bottomBar = findChild<QWidget*>("bottomControlFrame")) bottomBar->show();
+        if (auto *localSide = findChild<QWidget*>("localSideFrame")) localSide->show();
+        if (menuBar()) menuBar()->show();
+        if (statusBar()) statusBar()->show();
+        syncRemoteContainerGeometry();
     }
     refreshRoomUserList();
     clearAllTileFrames();
@@ -1855,6 +1862,20 @@ void MainWindow::setupSignalUi()
         roomEventLog->setMaximumBlockCount(200);
     }
 
+    if (roomDock) {
+        roomDock->setMinimumWidth(340);
+        roomDock->setMaximumWidth(520);
+        roomDock->setAllowedAreas(Qt::RightDockWidgetArea);
+        roomDock->setFeatures(QDockWidget::DockWidgetClosable
+                              | QDockWidget::DockWidgetMovable
+                              | QDockWidget::DockWidgetFloatable);
+    }
+    if (auto *tabs = findChild<QTabWidget*>("roomTabWidget")) {
+        if (tabs->currentIndex() < 0 || tabs->currentIndex() == 3) {
+            tabs->setCurrentIndex(0);
+        }
+    }
+
     // M3: 聊天输入区初始化（优先使用 chatTab；兼容旧 UI 时回退到 eventTab）。
     if (!chatMessageLog) {
         chatMessageLog = roomEventLog;
@@ -2153,11 +2174,24 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         if (!focusMode || focusedStream.isEmpty()) return true;
         if (!focusPreviewFullScreen) {
             focusPreviewFullScreen = true;
+            if (roomDock) roomDock->hide();
+            if (auto *topBar = findChild<QWidget*>("topBarFrame")) topBar->hide();
+            if (auto *bottomBar = findChild<QWidget*>("bottomControlFrame")) bottomBar->hide();
+            if (auto *localSide = findChild<QWidget*>("localSideFrame")) localSide->hide();
+            if (menuBar()) menuBar()->hide();
+            if (statusBar()) statusBar()->hide();
             showFullScreen();
+            syncRemoteContainerGeometry();
             appendRoomEvent("已进入焦点全屏（双击退出）");
         } else {
             focusPreviewFullScreen = false;
             showNormal();
+            if (roomDock) roomDock->show();
+            if (auto *topBar = findChild<QWidget*>("topBarFrame")) topBar->show();
+            if (auto *bottomBar = findChild<QWidget*>("bottomControlFrame")) bottomBar->show();
+            if (auto *localSide = findChild<QWidget*>("localSideFrame")) localSide->show();
+            if (menuBar()) menuBar()->show();
+            if (statusBar()) statusBar()->show();
             syncRemoteContainerGeometry();
             appendRoomEvent("已退出焦点全屏");
         }
@@ -2184,6 +2218,12 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                 if (focusPreviewFullScreen) {
                     focusPreviewFullScreen = false;
                     showNormal();
+                    if (roomDock) roomDock->show();
+                    if (auto *topBar = findChild<QWidget*>("topBarFrame")) topBar->show();
+                    if (auto *bottomBar = findChild<QWidget*>("bottomControlFrame")) bottomBar->show();
+                    if (auto *localSide = findChild<QWidget*>("localSideFrame")) localSide->show();
+                    if (menuBar()) menuBar()->show();
+                    if (statusBar()) statusBar()->show();
                     syncRemoteContainerGeometry();
                 }
                 if (remoteStack && remoteGridPage) {
@@ -2572,6 +2612,12 @@ void MainWindow::refreshRoomUserList()
             if (focusPreviewFullScreen) {
                 focusPreviewFullScreen = false;
                 showNormal();
+                if (roomDock) roomDock->show();
+                if (auto *topBar = findChild<QWidget*>("topBarFrame")) topBar->show();
+                if (auto *bottomBar = findChild<QWidget*>("bottomControlFrame")) bottomBar->show();
+                if (auto *localSide = findChild<QWidget*>("localSideFrame")) localSide->show();
+                if (menuBar()) menuBar()->show();
+                if (statusBar()) statusBar()->show();
                 syncRemoteContainerGeometry();
             }
             if (ui && ui->remoteVideolabel) {
