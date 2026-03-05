@@ -19,7 +19,7 @@ bool AvAudioEncoder::open(int sampleRate, int channels)
 
     codec_=avcodec_find_encoder(AV_CODEC_ID_AAC);
     if(!codec_){
-        qWarning()<<"[AvAudioEncoder] AAC encoder not found";
+        qWarning()<<"[AvAudioEncoder] AAC编码器未找到";
         return false;
     }
 
@@ -28,10 +28,14 @@ bool AvAudioEncoder::open(int sampleRate, int channels)
 
     av_channel_layout_default(&ctx_->ch_layout,channels);
     ctx_->sample_rate=sampleRate_;
-    ctx_->time_base=AVRational{1,sampleRate_};
-    ctx_->bit_rate=64000;//mono 64k 足够
+    ctx_->time_base=AVRational{1,sampleRate_};  //时间基（AVRational 分数类型），表示「1 个时间单位 = 1 / 采样率 秒」，用于计算时间戳。
+    ctx_->bit_rate=64000;//mono 64k 足够  单声道 AAC 64k 码率可保证音质且体积适中。
 
-    //选择encoder支持的sample_fmt,优先FLTP
+    //选择encoder支持的sample_fmt采样格式,优先FLTP，AAC 编码器通常要求浮点型 FLTP
+    //AVSampleFormat 枚举：
+    //AV_SAMPLE_FMT_FLTP：浮点平面格式（每个声道单独一个缓冲区）。
+    //AV_SAMPLE_FMT_S16：16 位整型（输入 PCM 的格式）。
+    //AV_SAMPLE_FMT_NONE：列表结束标记。
     AVSampleFormat pick=AV_SAMPLE_FMT_FLTP;
     if(codec_->sample_fmts){
         pick=codec_->sample_fmts[0];
@@ -54,7 +58,7 @@ bool AvAudioEncoder::open(int sampleRate, int channels)
 
     //S16->encoder sample_fmt
     AVChannelLayout inLayout;
-    av_channel_layout_default(&inLayout,channels_);
+    av_channel_layout_default(&inLayout,channels_); //初始化输入声道布局
     swr_=swr_alloc();
     if(!swr_){
         close();
@@ -116,13 +120,13 @@ void AvAudioEncoder::pushPcm(const QByteArray &pcm)
     if(!opened_||pcm.isEmpty()) return;
 
     const int16_t* samples=reinterpret_cast<const int16_t*>(pcm.constData());
-    int sampleCount=pcm.size()/2;//S16
-    pcmBuf_.insert(pcmBuf_.end(),samples,samples+sampleCount);
+    int sampleCount=pcm.size()/2;//S16（字节数/2）
+    pcmBuf_.insert(pcmBuf_.end(),samples,samples+sampleCount);  //将新的 PCM 样本追加到 pcmBuf_ 缓存中
 
     const int frameSize=(ctx_->frame_size>0)?ctx_->frame_size:1024;
     const int need=frameSize* channels_;
 
-    while((int)pcmBuf_.size()>=need){
+    while((int)pcmBuf_.size()>=need){   //缓存数据足够一帧时循环编码
         if(!frame_){
             frame_=av_frame_alloc();
             frame_->nb_samples=frameSize;
@@ -131,17 +135,17 @@ void AvAudioEncoder::pushPcm(const QByteArray &pcm)
             frame_->sample_rate=ctx_->sample_rate;
             if(av_frame_get_buffer(frame_,0)<0) return;
         }
-        if(av_frame_make_writable(frame_)<0) return;
+        if(av_frame_make_writable(frame_)<0) return;    //确保 AVFrame 的数据缓冲区可写
 
         const uint8_t *inData[1]={reinterpret_cast<const uint8_t*>(pcmBuf_.data())};
-        int ret=swr_convert(swr_,frame_->data,frameSize,inData,frameSize);
+        int ret=swr_convert(swr_,frame_->data,frameSize,inData,frameSize);  //执行重采样
         if(ret<0) return;
 
         frame_->nb_samples=ret;
         frame_->pts=nextPts_;
         nextPts_+=ret;
 
-        //消费输入
+        //消费输入，从缓存中删除已编码的样本
         pcmBuf_.erase(pcmBuf_.begin(),pcmBuf_.begin()+need);
 
         ret=avcodec_send_frame(ctx_,frame_);
@@ -160,11 +164,12 @@ void AvAudioEncoder::pushPcm(const QByteArray &pcm)
             pts+=ptsBase;
             if(pts<0) pts=0;
 
-            quint32 pts_ms=(quint32)av_rescale_q(pts,ctx_->time_base,AVRational{1,1000});
+            quint32 pts_ms=(quint32)av_rescale_q(pts,ctx_->time_base,AVRational{1,1000});//将时间戳从一个时间基转换为另一个时间基，将采样数的 PTS 转换为毫秒级 PTS
+            //防回退：若当前 PTS ≤ 上一个 PTS，强制设置为上一个 PTS+1（避免播放器时间戳错乱）。
             if(hasLastPts&&pts_ms<=lastPtsMs)   pts_ms=lastPtsMs+1;
             lastPtsMs=pts_ms;
             hasLastPts=true;
-
+            //将编码后的 AAC 数据（pkt_->data）转为 QByteArray，通过信号 audioPacketReady 发送给上层（Qt 信号槽机制），携带毫秒级 PTS
             QByteArray ba(reinterpret_cast<const char*>(pkt_->data),pkt_->size);
             emit audioPacketReady(ba,pts_ms);
 

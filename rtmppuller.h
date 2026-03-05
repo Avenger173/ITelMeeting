@@ -33,7 +33,7 @@ signals:
     void errorOccurred(const QString& err);
     void finished();
 private:
-    static int interruptCb(void *opaque);
+    static int interruptCb(void *opaque);   //中断回调函数，用于响应stopFlag，实现拉流的优雅停止
     QAtomicInteger<bool> stopFlag{false};
     QAtomicInteger<bool> audioEnabled_{true};
 
@@ -55,7 +55,7 @@ private:
     QIODevice* audioOut_=nullptr;
     QAudioFormat playFmt_;
     QByteArray audioPending_;
-    void flushAudioPending_();
+    void flushAudioPending_();//刷新待播放的音频数据，避免音频卡顿
 };
 
 #endif // RTMPPULLER_H

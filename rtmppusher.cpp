@@ -4,12 +4,13 @@
 //工具函数前向声明:查找H.264 AnnexB起始码(00 00 00 01或00 00 01)
 static inline int findStartCode(const uint8_t *p, int end, int &off);
 static QByteArray annexBToAvcc(const uint8_t* data, int size);
-static bool hasVclNal(const uint8_t* data,int size);
+static bool hasVclNal(const uint8_t* data,int size);    //判断 H.264 数据是否包含 VCL 单元（视频编码层，如 I/P 帧）
 static inline bool looksAnnexB(const uint8_t* data,int size);
 
 RtmpPusher::RtmpPusher(QObject *parent)
     : QObject{parent}
 {
+    //初始化 FFmpeg 网络模块（必须调用，否则 RTMP 网络操作失败）
     avformat_network_init();
 }
 
@@ -31,7 +32,7 @@ bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)
     url_=rtmpUrl;
     vFps=(fps>0 ? fps : vFps);
     aRate=(sampleRate>0 ? sampleRate : aRate);
-
+    //创建输出上下文
     if(avformat_alloc_output_context2(&fmtCtx_,nullptr,"flv",url_.toUtf8().constData())<0||!fmtCtx_){
         qWarning()<<"[RtmpPusher] avformat_alloc_output_context2 failed";
         return false;
@@ -73,13 +74,15 @@ bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)
         aStream_->codecpar->format=AV_SAMPLE_FMT_FLTP;//典型AAC
         av_channel_layout_default(&aStream_->codecpar->ch_layout,aCh);//当前为单声道
         //临时：未接入音频时也允许写header,避免拉流失败
-        aExtra_=makeAacAsc(aRate,aCh);
+        aExtra_=makeAacAsc(aRate,aCh);  //生成 AAC 的音频特定配置（ASC），提前初始化音频配置标记，避免拉流失败
         haveAConf=true;
     }else{
         haveAConf=false;
     }
 
-    //打开IO
+    //打开IO，检查当前输出格式上下文（fmtCtx_）对应的输出格式（oformat），判断该格式是否需要关联实际的文件 I/O 操作
+    //AVFMT_NOFILE：格式是否不需要文件 IO（RTMP 是网络 IO，需要打开），参数 1：IO 上下文指针的指针，参数 1：IO 上下文指针的指针
+    //avio_open：打开 FFmpeg IO 上下文，参数 1：IO 上下文指针的指针
     if(!(fmtCtx_->oformat->flags&AVFMT_NOFILE)){
         if(avio_open(&fmtCtx_->pb,url_.toUtf8().constData(),AVIO_FLAG_WRITE)<0){
             qWarning()<<"[RtmpPusher] avio_open failed";
@@ -95,12 +98,13 @@ bool RtmpPusher::start(const QString& rtmpUrl,int fps,int sampleRate)
             return false;
         }
     }
-
-    fmtCtx_->flags|=AVFMT_FLAG_FLUSH_PACKETS;
-    fmtCtx_->flags|=AVFMT_FLAG_NOBUFFER;
-    fmtCtx_->max_delay=0;
-    if(fmtCtx_->pb){
-        av_opt_set(fmtCtx_->pb,"flush_packets","1",0);
+    //配置推流优化参数
+    fmtCtx_->flags|=AVFMT_FLAG_FLUSH_PACKETS;   //强制刷新数据包，减少延迟
+    fmtCtx_->flags|=AVFMT_FLAG_NOBUFFER;        //禁用缓存，实时推流必备
+    fmtCtx_->max_delay=0;                       //最大延迟（0 表示无延迟）
+    //立即将数据从缓冲区刷写到底层设备（如文件、网络流），而不是等待缓冲区满了再刷，避免数据包在缓冲区堆积导致延迟。
+    if(fmtCtx_->pb){    //pb 是 AVFormatContext 中的 AVIOContext* 类型成员，代表 IO 上下文
+        av_opt_set(fmtCtx_->pb,"flush_packets","1",0);  //数据包刷新开关
     }
 
     vFirst_=aFirst_=true;
@@ -149,6 +153,7 @@ void RtmpPusher::stop()
 
 void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
 {
+    //基准时间戳初始化：首帧时将当前 PTS 设为基准，后续 PTS 相对基准计算（避免超大时间戳）
     if(!basePtsInited){
         basePtsMs=pts_ms;
         basePtsInited=true;
@@ -162,7 +167,9 @@ void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
     //1.尝试从AnnexB里解析出SPS/PPS,并确认是否为关键帧
     QByteArray sps,pps;
     bool isKey=false;
+    //解析 AnnexB 格式的 H.264 数据，提取 SPS/PPS（视频配置参数），判断是否为关键帧
     parseH264AnnexBForSpsPps(reinterpret_cast<const uint8_t*>(pktData.constData()),pktData.size(),sps,pps,isKey);
+    //如果视频配置未初始化，且解析到 SPS/PPS，则调用 makeAvcCFromSpsPps 生成 AVCC 格式的配置数据，标记视频配置完成
     if(!haveVConf){
         if(!sps.isEmpty()&&!pps.isEmpty()){
             vExtra_=makeAvcCFromSpsPps(sps,pps);
@@ -187,28 +194,28 @@ void RtmpPusher::pushEncodeVideo(const QByteArray &pktData, quint32 pts_ms)
     QByteArray payload=pktData;
     bool looksAnnexB=rawSize>=4&&
                        ((raw[0]==0&&raw[1]==0&&raw[2]==1)||(raw[0]==0&&raw[1]==0&&raw[2]==0&&raw[3]==1));
-    if(looksAnnexB){
+    if(looksAnnexB){    //判断是否为 AnnexB 格式：如果是，转换为 AVCC 格式
         payload=annexBToAvcc(raw,rawSize);
         if(payload.isEmpty()) return;
     }
-    if(payload.size()<=9) return;//避免ZLM断言崩溃
+    if(payload.size()<=9) return;//过滤过小的包，避免ZLM断言崩溃
 
     AVPacket pkt;
     av_init_packet(&pkt);
     pkt.data=reinterpret_cast<uint8_t*>(payload.data());
     pkt.size=payload.size();
     if(isKey) pkt.flags|=AV_PKT_FLAG_KEY;
-    pkt.pts=pkt.dts=pts_ms;//毫秒信号
-    //key:给容器一个大致的duration(可选)
+    pkt.pts=pkt.dts=pts_ms;//毫秒信号，pts：显示时间戳，dts：解码时间戳
+    //key:给容器一个大致的duration持续时间(可选)
     pkt.duration=0;
 
     av_packet_rescale_ts(&pkt,AVRational{1,1000},vStream_->time_base);
     pkt.stream_index=vStream_->index;
     QMutexLocker locker(&writeMtx_);
-    int r=av_interleaved_write_frame(fmtCtx_,&pkt);
+    int r=av_interleaved_write_frame(fmtCtx_,&pkt);//将音视频数据包（pkt）交错写入输出上下文（fmtCtx_）（保证音视频同步）
     if(r<0){
         char err[128];
-        av_strerror(r,err,sizeof(err));
+        av_strerror(r,err,sizeof(err));//FFmpeg 提供的错误码转换函数，将返回的错误码 r 转为人类可读的字符串
         qWarning()<<"[RtmpPusher] write video failed:"<<err;
         emit writeError(QString::fromUtf8(err), true);
     }
@@ -319,6 +326,7 @@ void RtmpPusher::parseH264AnnexBForSpsPps(const uint8_t *data, int size, QByteAr
         off+=int(nalSize);
     }
 }
+//Annex B 用 “起始码分隔 NALU”，AVCC 用 “4 字节长度前缀标识 NALU”，函数本质是遍历所有 NALU，替换分隔符为长度前缀
 static QByteArray annexBToAvcc(const uint8_t* data,int size){
     QByteArray out;
     if(!data||size<=0) return out;
@@ -330,26 +338,28 @@ static QByteArray annexBToAvcc(const uint8_t* data,int size){
 
         int nalStart=off;
         int tmp=off;
-        int nextSc=findStartCode(data,size,tmp);
-        int nalEnd=(nextSc<0)?size:nextSc;
+        int nextSc=findStartCode(data,size,tmp);// 查找下一个起始码位置
+        int nalEnd=(nextSc<0)?size:nextSc;// 当前NALU的结束位置：下一个起始码/数据末尾
 
-        int nalSize=nalEnd-nalStart;
+        int nalSize=nalEnd-nalStart;// 计算当前NALU的字节长度
         if(nalSize>0){
+            // 将NALU长度转换为4字节大端格式（AVCC格式要求）
             uint32_t len=static_cast<uint32_t>(nalSize);
             char lenBytes[4]={
-                char((len>>24)&0xFF),
+                char((len>>24)&0xFF),   // 高8位
                 char((len>>16)&0xFF),
                 char((len>>8)&0xFF),
-                char(len&0xFF),
+                char(len&0xFF),         // 低8位
             };
-            out.append(lenBytes,4);
+            out.append(lenBytes,4); // 先写入4字节长度
+            // 再写入NALU原始数据（从起始码后到下一个起始码前）
             out.append(reinterpret_cast<const char*>(data+nalStart),nalSize);
         }
-        off=nalEnd;
+        off=nalEnd; // 移动偏移量到当前NALU结束位置，处理下一个NALU
     }
     return out;
 }
-
+//VCL 单元是视频编码的核心数据（I/P/B 帧），类型为 1（非关键帧）或 5（关键帧）
 static bool hasVclNal(const uint8_t *data, int size){
     if(!data||size<=0) return false;
 
@@ -390,22 +400,26 @@ static bool hasVclNal(const uint8_t *data, int size){
     }
     return false;
 }
+//将 H.264 编码中的 SPS（序列参数集）和 PPS（图像参数集）原始数据，按照 AVCC（也叫 Annex B 转 AVCC）格式封装成标准的 AVCC 头部数据
+//AVCC 头部前 5 字节是固定格式（版本 + SPS 核心参数 + 保留位），后续按 “个数标识 + 2 字节长度 + 原始数据” 依次封装 SPS 和 PPS
 QByteArray RtmpPusher::makeAvcCFromSpsPps(const QByteArray &sps, const QByteArray &pps)
 {
     QByteArray avcc;
     if(sps.size()<4||pps.isEmpty()) return avcc;
 
+    // 类型转换：将QByteArray的SPS数据指针转为uint8_t（无符号字节）类型指针，方便按字节访问
     const uint8_t* s=reinterpret_cast<const uint8_t*>(sps.constData());
-    uint8_t profile_idc=s[1];
-    uint8_t profile_comp=s[2];
-    uint8_t level_idc =s[3];
-
+    //提取H.264 SPS中的核心参数
+    uint8_t profile_idc=s[1];   // 编码档次（如Baseline/High等）
+    uint8_t profile_comp=s[2];  // 档次兼容参数（profile compatibility）
+    uint8_t level_idc =s[3];    // 编码级别（如Level 3.0/4.1等）
+    //构建了 AVCC 头部的前 5 字节,完整的 AVCC 头部还需要包含 SPS/PPS 的长度和数据（如第 6 字节表示 SPS 个数，后续是 SPS 长度 + SPS 数据、PPS 个数 + PPS 长度 + PPS 数据）
     avcc.resize(5);
-    avcc[0]=0x01;//version
-    avcc[1]=profile_idc;
-    avcc[2]=profile_comp;
-    avcc[3]=level_idc;
-    avcc[4]=0xFF;
+    avcc[0]=0x01;//version  // AVCC版本号，固定为1
+    avcc[1]=profile_idc;    // 填入提取的档次
+    avcc[2]=profile_comp;   // 填入档次兼容参数
+    avcc[3]=level_idc;      // 填入级别
+    avcc[4]=0xFF;           // 保留位（6位）+SPS个数（2位），这里0xFF表示SPS个数为1，保留位全1
 
     //SPS
     avcc.append(char(0xE1));
@@ -435,16 +449,16 @@ uint8_t RtmpPusher::srIndexFromRate(int sr)
     //找不到就用44100的index=4
     return 4;
 }
-
+//生成 AAC 音频配置序列，根据输入的采样率和声道数，生成符合 AAC 标准的音频配置序列（Audio Specific Configuration，ASC）
 QByteArray RtmpPusher::makeAacAsc(int sampleRate, int channles)
 {
-    uint8_t aot=2;
-    uint8_t sfi=srIndexFromRate(sampleRate);
-    uint8_t ch=(channles<0?1:(channles>7?2:(uint8_t)channles));
+    uint8_t aot=2;//Audio Object Type（音频对象类型），值为 2 代表AAC LC（Low Complexity），这是最常用的 AAC 编码格式，也是 RTMP 推流中最常见的类型
+    uint8_t sfi=srIndexFromRate(sampleRate);// Sample Frequency Index（采样率索引）
+    uint8_t ch=(channles<0?1:(channles>7?2:(uint8_t)channles));//如果声道数小于 0（非法值），强制设为 1（单声道）；如果声道数大于 7（AAC 标准中 ASC 的声道字段仅支持 3 位，最大表示 7），强制设为 2（立体声）
 
-    QByteArray asc(2,0);
-    asc[0]=(aot<<3)|((sfi>>1)&0x07);
-    asc[1]=((sfi&0x01)<<7)|(ch<<3);
+    QByteArray asc(2,0);    //创建一个长度为 2 字节、初始值全为 0 的QByteArray，用于存储最终的 ASC 数据
+    asc[0]=(aot<<3)|((sfi>>1)&0x07);    //拼接 ASC 第一个字节
+    asc[1]=((sfi&0x01)<<7)|(ch<<3);     //拼接 ASC 第二个字节
     return asc;
 }
 
@@ -459,9 +473,11 @@ bool RtmpPusher::ensureHeaderWritten()
         vStream_->codecpar->extradata=nullptr;
         vStream_->codecpar->extradata_size=0;
     }
+    //vExtra_：预存的视频编码配置数据（如 H264 的 SPS/PPS，H265 的 VPS/SPS/PPS）
     vStream_->codecpar->extradata=(uint8_t*)av_malloc(vExtra_.size()+AV_INPUT_BUFFER_PADDING_SIZE);
     vStream_->codecpar->extradata_size=vExtra_.size();
     memcpy(vStream_->codecpar->extradata,vExtra_.constData(),vExtra_.size());
+    // 填充末尾的padding为0（FFmpeg要求，避免内存越界或解析错误）
     memset(vStream_->codecpar->extradata+vExtra_.size(),0,AV_INPUT_BUFFER_PADDING_SIZE);
     //补aStream的extradata
     if(aStream_){
@@ -477,11 +493,11 @@ bool RtmpPusher::ensureHeaderWritten()
     }
 
 
-    //现在写header(只写一次)
+    //现在写入RTMP推流头部(只写一次)
     AVDictionary* opts=nullptr;
-    av_dict_set(&opts,"rtmp_live","live",0);
-    av_dict_set(&opts,"flvflags","no_duration_filesize",0);
-    if(avformat_write_header(fmtCtx_,&opts)<0){
+    av_dict_set(&opts,"rtmp_live","live",0);    // 设置推流模式为“直播”
+    av_dict_set(&opts,"flvflags","no_duration_filesize",0); // FLV不写时长/文件大小（直播无固定时长）
+    if(avformat_write_header(fmtCtx_,&opts)<0){ // 写入头部到 RTMP 连接
         av_dict_free(&opts);
         qWarning()<<"[RtmpPusher] avformat_write_header failed(ensureHeaderWritten)";
         return false;

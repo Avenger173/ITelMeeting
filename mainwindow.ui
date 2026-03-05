@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1280</width>
-    <height>720</height>
+    <width>1920</width>
+    <height>900</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -32,12 +32,12 @@
     </property>
     <item>
      <widget class="QFrame" name="topBarFrame">
-       <property name="styleSheet">
-        <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
+      <property name="styleSheet">
+       <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
 QLabel#meetingTitleLabel{color:#f5f7fb;font-size:16px;font-weight:700;}
 QLabel#meetingCodeLabel,QLabel#signalBadgeLabel,QLabel#shareBadgeLabel,QLabel#meetingStatsLabel{color:#d5deed;background:#2a3140;padding:4px 8px;border-radius:6px;}
 QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
-       </property>
+      </property>
       <property name="frameShape">
        <enum>QFrame::Shape::StyledPanel</enum>
       </property>
@@ -88,22 +88,22 @@ QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
          </property>
         </widget>
        </item>
-        <item>
-         <widget class="QLabel" name="shareBadgeLabel">
-          <property name="text">
-           <string>共享: 关</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="meetingStatsLabel">
-          <property name="text">
-           <string>未推流 | 档位:-- | -- | -- | 重连:信令0 拉流0</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </widget>
+       <item>
+        <widget class="QLabel" name="shareBadgeLabel">
+         <property name="text">
+          <string>共享: 关</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="meetingStatsLabel">
+         <property name="text">
+          <string>未推流 | 档位:-- | -- | -- | 重连:信令0 拉流0</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
     </item>
     <item>
      <layout class="QHBoxLayout" name="contentLayout">
@@ -139,12 +139,12 @@ QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
          </property>
          <item>
           <widget class="QLabel" name="remoteVideolabel">
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>0</height>
-             </size>
-            </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>0</height>
+            </size>
+           </property>
            <property name="styleSheet">
             <string notr="true">QLabel{background:#05070b;color:#9aa7bd;border-radius:8px;}</string>
            </property>
@@ -200,8 +200,8 @@ QLabel#localHintBody{color:#aeb8cb;}</string>
           <widget class="QLabel" name="localVideolabel">
            <property name="minimumSize">
             <size>
-              <width>220</width>
-              <height>130</height>
+             <width>220</width>
+             <height>130</height>
             </size>
            </property>
            <property name="styleSheet">
@@ -309,22 +309,22 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
        <property name="bottomMargin">
         <number>6</number>
        </property>
-        <item>
-         <widget class="QPushButton" name="startReceiveButton">
-          <property name="text">
-           <string>连接信令</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="logoutButton">
-          <property name="text">
-           <string>退出登录</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QFrame" name="ctrlSep1">
+       <item>
+        <widget class="QPushButton" name="startReceiveButton">
+         <property name="text">
+          <string>连接信令</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="logoutButton">
+         <property name="text">
+          <string>退出登录</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="ctrlSep1">
          <property name="frameShape">
           <enum>QFrame::Shape::VLine</enum>
          </property>
@@ -420,7 +420,7 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
            <widget class="QSlider" name="beautyStrengthSlider">
             <property name="minimumSize">
              <size>
-               <width>90</width>
+              <width>90</width>
               <height>0</height>
              </size>
             </property>
@@ -450,7 +450,7 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
              <string>60</string>
             </property>
             <property name="alignment">
-             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignTrailing|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -512,8 +512,8 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
            <widget class="QComboBox" name="cameraDevicecomboBox">
             <property name="minimumSize">
              <size>
-               <width>100</width>
-               <height>28</height>
+              <width>100</width>
+              <height>32</height>
              </size>
             </property>
            </widget>
@@ -522,8 +522,8 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
            <widget class="QComboBox" name="audioDevicecomboBox">
             <property name="minimumSize">
              <size>
-               <width>100</width>
-               <height>28</height>
+              <width>100</width>
+              <height>32</height>
              </size>
             </property>
            </widget>
@@ -539,8 +539,8 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
   <widget class="QDockWidget" name="roomDock">
    <property name="minimumSize">
     <size>
-      <width>300</width>
-      <height>300</height>
+     <width>576</width>
+     <height>384</height>
     </size>
    </property>
    <property name="styleSheet">
@@ -789,104 +789,104 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
             <number>6</number>
            </property>
            <item>
-             <widget class="QToolButton" name="whiteboardPenButton">
+            <widget class="QToolButton" name="whiteboardPenButton">
+             <property name="text">
+              <string>画笔</string>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+             <property name="checked">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="whiteboardColorLabel">
+             <property name="text">
+              <string>颜色</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="whiteboardColorCombo">
+             <property name="minimumSize">
+              <size>
+               <width>88</width>
+               <height>0</height>
+              </size>
+             </property>
+             <item>
               <property name="text">
-               <string>画笔</string>
+               <string>红色</string>
               </property>
-              <property name="checkable">
-               <bool>true</bool>
-              </property>
-              <property name="checked">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="whiteboardColorLabel">
+             </item>
+             <item>
               <property name="text">
-               <string>颜色</string>
+               <string>蓝色</string>
               </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="whiteboardColorCombo">
-              <property name="minimumSize">
-               <size>
-                <width>88</width>
-                <height>0</height>
-               </size>
-              </property>
-              <item>
-               <property name="text">
-                <string>红色</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>蓝色</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>绿色</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>黑色</string>
-               </property>
-              </item>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="whiteboardWidthLabel">
+             </item>
+             <item>
               <property name="text">
-               <string>粗细</string>
+               <string>绿色</string>
               </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QSpinBox" name="whiteboardWidthSpin">
-              <property name="minimum">
-               <number>1</number>
-              </property>
-              <property name="maximum">
-               <number>12</number>
-              </property>
-              <property name="value">
-               <number>3</number>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="whiteboardUndoButton">
+             </item>
+             <item>
               <property name="text">
-               <string>撤销</string>
+               <string>黑色</string>
               </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="whiteboardClearButton">
-              <property name="text">
-               <string>清空白板</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QToolButton" name="whiteboardLockButton">
-              <property name="toolTip">
-               <string>仅主持人/联席主持可切换</string>
-              </property>
-              <property name="checkable">
-               <bool>true</bool>
-              </property>
-              <property name="text">
-               <string>白板锁定</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <spacer name="whiteboardToolbarSpacer">
+             </item>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="whiteboardWidthLabel">
+             <property name="text">
+              <string>粗细</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QSpinBox" name="whiteboardWidthSpin">
+             <property name="minimum">
+              <number>1</number>
+             </property>
+             <property name="maximum">
+              <number>12</number>
+             </property>
+             <property name="value">
+              <number>3</number>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="whiteboardUndoButton">
+             <property name="text">
+              <string>撤销</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="whiteboardClearButton">
+             <property name="text">
+              <string>清空白板</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QToolButton" name="whiteboardLockButton">
+             <property name="toolTip">
+              <string>仅主持人/联席主持可切换</string>
+             </property>
+             <property name="text">
+              <string>白板锁定</string>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="whiteboardToolbarSpacer">
              <property name="orientation">
               <enum>Qt::Orientation::Horizontal</enum>
              </property>
@@ -937,7 +937,7 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1280</width>
+     <width>1920</width>
      <height>25</height>
     </rect>
    </property>
