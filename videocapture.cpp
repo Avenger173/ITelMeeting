@@ -9,6 +9,7 @@
 #include <QScreen>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -38,44 +39,65 @@ static void applySlimFaceWarp(cv::Mat &img, const std::vector<cv::Rect> &faces, 
 {
     if (img.empty() || faces.empty()) return;
 
-    const double ratio = 0.06 + 0.18 * std::clamp(strength01, 0.0, 1.0); // 横向压缩比例
+    const double s = std::clamp(strength01, 0.0, 1.0);
+    if (s <= 0.0) return;
 
+    auto smoothStep = [](double edge0, double edge1, double x) {
+        if (edge1 <= edge0) return 0.0;
+        double t = (x - edge0) / (edge1 - edge0);
+        t = std::clamp(t, 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
+    };
     for (const auto &f : faces) {
-        cv::Rect roi = expandFaceRect(f, img.size(), 1.35, 1.20);
-        if (roi.width < 20 || roi.height < 20) continue;    //过滤过小的 ROI 区域
-        //核心：横向压缩人脸区域
-        cv::Mat src = img(roi).clone();
-        const int targetW = std::max(2, static_cast<int>(src.cols * (1.0 - ratio)));    //原宽度 × (1 - 压缩比例)
-        if (targetW >= src.cols) continue;
-        //将压缩后的图像 squeezed 粘贴到 warped（原 ROI 副本）
-        cv::Mat squeezed;
-        cv::resize(src, squeezed, cv::Size(targetW, src.rows), 0, 0, cv::INTER_LINEAR);//将 src 横向压缩到 targetW 宽度（高度不变），使用 INTER_LINEAR（双线性插值）保证压缩后的图像平滑；
-        cv::Mat warped = src.clone();
-        const int x0 = (src.cols - targetW) / 2;    //x0 计算居中偏移量，让压缩后的图像在原宽度内居中显示，实现 “中间窄、两边留空” 的瘦脸效果。
-        squeezed.copyTo(warped(cv::Rect(x0, 0, targetW, src.rows)));
+        // 仅覆盖脸部主体，尽量不碰头发区域
+        cv::Rect roi = expandFaceRect(f, img.size(), 1.18, 1.06);
+        if (roi.width < 32 || roi.height < 32) continue;
 
-        // 只在脸部椭圆区域混合，避免边缘形变明显
-        cv::Mat mask(src.rows, src.cols, CV_8UC1, cv::Scalar(0));
-        cv::ellipse(mask,
-                    cv::Point(src.cols / 2, src.rows / 2),
-                    cv::Size(std::max(6, static_cast<int>(src.cols * 0.40)),
-                             std::max(6, static_cast<int>(src.rows * 0.52))),
-                    0, 0, 360, cv::Scalar(255), -1, cv::LINE_AA);
-        //对蒙版做高斯模糊（sigma=8）：让椭圆边缘从白到黑平滑过渡，避免融合时出现明显的边界线
-        cv::GaussianBlur(mask, mask, cv::Size(0, 0), 8.0);
-        //图像融合：压缩区域与原图自然混合
-        cv::Mat m1;
-        mask.convertTo(m1, CV_32FC1, 1.0 / 255.0);
-        cv::Mat m3;
-        std::vector<cv::Mat> mvec(3, m1);
-        cv::merge(mvec, m3);    // 单通道蒙版 → 3通道蒙版（匹配RGB图像）
-        // 转换图像为浮点型，避免uchar运算溢出
-        cv::Mat f0, f1;
-        src.convertTo(f0, CV_32FC3);
-        warped.convertTo(f1, CV_32FC3);
-        // 加权融合：蒙版内用压缩后的图像，蒙版外用原图
-        cv::Mat out = f0.mul(cv::Scalar::all(1.0) - m3) + f1.mul(m3);
-        out.convertTo(img(roi), CV_8UC3);
+        cv::Mat src = img(roi).clone();
+        const int w = src.cols;
+        const int h = src.rows;
+
+        cv::Mat mapX(h, w, CV_32FC1);
+        cv::Mat mapY(h, w, CV_32FC1);
+
+        // 基于脸框构造“仅下半脸生效”的水平 inward 位移场
+        const double fx = static_cast<double>(f.x - roi.x);
+        const double fy = static_cast<double>(f.y - roi.y);
+        const double fw = static_cast<double>(f.width);
+        const double fh = static_cast<double>(f.height);
+        const double cx = fx + fw * 0.5;
+        const double maxShift = (0.02 + 0.06 * s) * fw; // 更稳，避免眼区/鼻区畸变
+
+        for (int y = 0; y < h; ++y) {
+            float *mx = mapX.ptr<float>(y);
+            float *my = mapY.ptr<float>(y);
+            for (int x = 0; x < w; ++x) {
+                const double rx = (static_cast<double>(x) - cx) / std::max(1.0, fw * 0.5); // [-1,1] around face center
+                const double absRx = std::abs(rx);
+                const double fyn = (static_cast<double>(y) - fy) / std::max(1.0, fh);
+
+                // 垂直权重：从鼻翼以下开始，峰值在脸颊/下颌，眼睛区域基本为0
+                const double topGate = smoothStep(0.50, 0.68, fyn);
+                const double bottomGate = 1.0 - smoothStep(0.95, 1.06, fyn);
+                const double wy = topGate * bottomGate;
+
+                // 水平权重：中心(鼻梁/眼间)与最外边缘都保护，只作用脸颊带
+                const double cheekBand = smoothStep(0.38, 0.86, absRx);
+                const double edgeFade = 1.0 - smoothStep(0.98, 1.06, absRx);
+                const double wx = cheekBand * edgeFade;
+
+                const double amp = maxShift * wy * wx;
+                const double sign = (rx >= 0.0) ? 1.0 : -1.0;
+                const double sx = static_cast<double>(x) + sign * amp; // inverse-map: inward shift
+                mx[x] = static_cast<float>(std::clamp(sx, 0.0, static_cast<double>(w - 1)));
+                my[x] = static_cast<float>(y);
+            }
+        }
+
+        cv::Mat warped;
+        cv::remap(src, warped, mapX, mapY, cv::INTER_LINEAR, cv::BORDER_REFLECT_101);
+        // 直接回写，避免“与原图二次混合”导致的旧轮廓残影
+        warped.copyTo(img(roi));
     }
 }
 
@@ -471,6 +493,12 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
         sigma = 22.0 + 28.0 * t;
         alpha = 0.50 + 0.24 * t;
         beta = 2.0 + 7.0 * t;
+    } else if (style == 5) {
+        // 瘦脸模式降低磨皮力度，保留纹理，避免“怪异塑料感”
+        d = 5;
+        sigma = 12.0 + 18.0 * t;
+        alpha = 0.28 + 0.20 * t;
+        beta = 0.8 + 3.0 * t;
     }
 
     // 双边滤波：核心磨皮API（保留边缘，仅模糊纹理）
@@ -531,7 +559,7 @@ void VideoCapture::applyBeautyFilter(cv::Mat &frame, int style, int level)
     double blend = 0.70 + 0.18 * t;
     switch (style) {
     case 4: blend = 0.78 + 0.18 * t; break; // 磨皮:更强的融合比例
-    case 5: blend = 0.44 + 0.18 * t; break; // 瘦脸:更弱的融合（避免形变明显）
+    case 5: blend = 0.32 + 0.16 * t; break; // 瘦脸:进一步减弱融合，观感更自然
     case 6: blend = 0.74 + 0.20 * t; break; // 祛皱:中等融合
     default: break;
     }
