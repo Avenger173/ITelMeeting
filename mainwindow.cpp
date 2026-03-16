@@ -28,6 +28,7 @@
 #include <QSignalBlocker>
 #include <QSettings>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QTextStream>
 #include <QStringConverter>
 #include <QDir>
@@ -65,6 +66,21 @@ static bool stopThreadAndDelete(QThread *&thr, const char *tag, int quitWaitMs =
     delete thr;
     thr = nullptr;
     return true;
+}
+//把传入的 URL 基础地址「洗干净」
+static QString normalizedUrlBase(QString value) {
+    value = value.trimmed();
+    while (value.endsWith('/')) {
+        value.chop(1);
+    }
+    return value;
+}
+//安全拼接「基础 URL + 流地址」
+static QString buildStreamUrl(const QString &base, const QString &stream) {
+    const QString cleanBase = normalizedUrlBase(base);
+    const QString cleanStream = stream.trimmed();
+    if (cleanBase.isEmpty() || cleanStream.isEmpty()) return QString();
+    return QString("%1/%2").arg(cleanBase, cleanStream);
 }
 }
 #ifdef Q_OS_WIN
@@ -108,6 +124,7 @@ MainWindow::MainWindow(QWidget *parent)
     , timer(new QTimer(this))
 {
     ui->setupUi(this);
+    loadAppConfig();
     loadLoginPrefs();
     qInfo() << "[Build] SmartMeet" << __DATE__ << __TIME__;
 
@@ -138,6 +155,8 @@ MainWindow::MainWindow(QWidget *parent)
     refreshRemoteTiles();
     setupMeetingStatsUi();
     setupLoginUi();
+    appendRoomEvent(QString("部署配置已加载：%1 | 信令=%2 | RTMP=%3")
+                        .arg(activeDeployProfile, signalUrl, rtmpPublishBaseUrl));
     //信令自动重连定时器
     signalReconnectTimer = new QTimer(this);
     signalReconnectTimer->setSingleShot(true);  //单次触发定时器（触发后自动停止）
@@ -189,8 +208,288 @@ void MainWindow::closeEvent(QCloseEvent *event)
 void MainWindow::resizeEvent(QResizeEvent *event)
 {
     QMainWindow::resizeEvent(event);
+    applyResponsiveLayout();
     syncRemoteContainerGeometry();
     syncLoginOverlayGeometry();
+}
+
+QString MainWindow::resolveAppConfigPath() const
+{
+    const QString envPath = qEnvironmentVariable("SMARTMEET_CONFIG").trimmed();
+    if (!envPath.isEmpty() && QFileInfo::exists(envPath)) {
+        return QDir::fromNativeSeparators(QFileInfo(envPath).absoluteFilePath());
+    }
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList candidates = {
+        QDir(appDir).filePath("smartmeet.ini"),
+        QDir::current().filePath("smartmeet.ini"),
+        QDir(QDir(appDir).absoluteFilePath("..")).filePath("smartmeet.ini"),
+        QDir(QDir(appDir).absoluteFilePath("../..")).filePath("smartmeet.ini")
+    };
+    for (const QString &candidate : candidates) {
+        if (QFileInfo::exists(candidate)) {
+            return QDir::fromNativeSeparators(QFileInfo(candidate).absoluteFilePath());
+        }
+    }
+    return QDir::fromNativeSeparators(QDir(appDir).filePath("smartmeet.ini"));
+}
+
+void MainWindow::loadAppConfig()
+{
+    appConfigPath = resolveAppConfigPath();
+    if (!QFileInfo::exists(appConfigPath)) {
+        qWarning() << "[Config] smartmeet.ini not found, using built-in defaults:" << appConfigPath;
+        signalUrl = signalUrl.trimmed();
+        rtmpPublishBaseUrl = normalizedUrlBase(rtmpPublishBaseUrl);
+        rtmpPlayBaseUrl = normalizedUrlBase(rtmpPlayBaseUrl);
+        return;
+    }
+
+    QSettings settings(appConfigPath, QSettings::IniFormat);
+    const QString envProfile = qEnvironmentVariable("SMARTMEET_PROFILE").trimmed();
+    QString profile = envProfile.isEmpty()
+                          ? settings.value("network/active_profile", activeDeployProfile).toString().trimmed()
+                          : envProfile;
+    if (profile.isEmpty()) {
+        profile = activeDeployProfile;
+    }
+
+    const QString profilePrefix = QString("profile.%1/").arg(profile);
+    const QString loadedSignal = settings.value(profilePrefix + "signal_url",
+                                                settings.value("network/signal_url", signalUrl)).toString().trimmed();
+    const QString loadedPublish = settings.value(profilePrefix + "rtmp_publish_base",
+                                                 settings.value("network/rtmp_publish_base", rtmpPublishBaseUrl)).toString().trimmed();
+    const QString loadedPlay = settings.value(profilePrefix + "rtmp_play_base",
+                                              settings.value("network/rtmp_play_base", rtmpPlayBaseUrl)).toString().trimmed();
+
+    if (!loadedSignal.isEmpty()) signalUrl = loadedSignal;
+    if (!loadedPublish.isEmpty()) rtmpPublishBaseUrl = loadedPublish;
+    if (!loadedPlay.isEmpty()) rtmpPlayBaseUrl = loadedPlay;
+    activeDeployProfile = profile;
+
+    signalUrl = signalUrl.trimmed();
+    rtmpPublishBaseUrl = normalizedUrlBase(rtmpPublishBaseUrl);
+    rtmpPlayBaseUrl = normalizedUrlBase(rtmpPlayBaseUrl);
+
+    qInfo() << "[Config] loaded profile=" << activeDeployProfile
+            << "path=" << appConfigPath
+            << "signal=" << signalUrl
+            << "rtmpPublish=" << rtmpPublishBaseUrl
+            << "rtmpPlay=" << rtmpPlayBaseUrl;
+}
+
+QString MainWindow::buildRtmpPublishUrl(const QString &stream) const
+{
+    return buildStreamUrl(rtmpPublishBaseUrl, stream);
+}
+
+QString MainWindow::buildRtmpPlayUrl(const QString &stream) const
+{
+    return buildStreamUrl(rtmpPlayBaseUrl, stream);
+}
+
+bool MainWindow::isCompactMeetingLayout() const
+{
+    return width() < 1420;
+}
+
+bool MainWindow::isUltraCompactMeetingLayout() const
+{
+    return width() < 1240;
+}
+
+void MainWindow::updateMeetingHeaderUi()
+{
+    if (!ui) return;
+
+    const bool compact = isCompactMeetingLayout();
+    const bool connecting = signalSocket
+                            && (signalSocket->state() == QAbstractSocket::ConnectingState
+                                || signalSocket->state() == QAbstractSocket::HostLookupState);
+
+    if (auto *meetingTitleLabel = findChild<QLabel*>("meetingTitleLabel")) {
+        meetingTitleLabel->setVisible(!compact);
+    }
+
+    if (auto *meetingCodeLabel = findChild<QLabel*>("meetingCodeLabel")) {
+        QString codeText = compact ? QStringLiteral("房: --") : QStringLiteral("房间: --");
+        if (!roomId.isEmpty()) {
+            codeText = compact
+                           ? QStringLiteral("房: %1").arg(roomId)
+                           : QStringLiteral("房间: %1").arg(roomId);
+            if (!compact && !selfStream.isEmpty()) {
+                codeText += QStringLiteral("  我: %1").arg(selfStream);
+            }
+        }
+        meetingCodeLabel->setText(codeText);
+        meetingCodeLabel->setToolTip(selfStream.isEmpty()
+                                         ? codeText
+                                         : QStringLiteral("房间: %1\n我的流: %2").arg(roomId, selfStream));
+    }
+
+    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
+        QString signalText;
+        if (signalConnected) signalText = compact ? QStringLiteral("在线") : QStringLiteral("信令在线");
+        else if (connecting) signalText = compact ? QStringLiteral("连接中") : QStringLiteral("信令连接中");
+        else signalText = compact ? QStringLiteral("离线") : QStringLiteral("信令离线");
+        signalBadgeLabel->setText(signalText);
+        signalBadgeLabel->setToolTip(signalText);
+    }
+
+    if (auto *shareBadgeLabel = findChild<QLabel*>("shareBadgeLabel")) {
+        QString shareText;
+        if (localScreenShareOn) {
+            shareText = compact
+                            ? QStringLiteral("共享中")
+                            : QStringLiteral("共享:%1").arg(shareSourceName.isEmpty() ? QStringLiteral("屏幕") : shareSourceName);
+        } else {
+            shareText = compact ? QStringLiteral("未共享") : QStringLiteral("共享:关");
+        }
+        shareBadgeLabel->setText(shareText);
+        shareBadgeLabel->setToolTip(localScreenShareOn
+                                        ? QStringLiteral("当前共享源: %1").arg(shareSourceName.isEmpty() ? QStringLiteral("屏幕") : shareSourceName)
+                                        : QStringLiteral("当前未开启屏幕共享"));
+    }
+}
+
+void MainWindow::updatePrimaryActionTexts()
+{
+    if (!ui) return;
+
+    const bool compact = isCompactMeetingLayout();
+    const bool connecting = signalSocket
+                            && (signalSocket->state() == QAbstractSocket::ConnectingState
+                                || signalSocket->state() == QAbstractSocket::HostLookupState);
+
+    if (ui->startReceiveButton) {
+        QString text;
+        if (signalConnected) text = compact ? QStringLiteral("断开") : QStringLiteral("断开信令");
+        else if (connecting) text = compact ? QStringLiteral("连接中") : QStringLiteral("连接中...");
+        else text = compact ? QStringLiteral("连接") : QStringLiteral("连接信令");
+        ui->startReceiveButton->setText(text);
+        ui->startReceiveButton->setToolTip(signalConnected
+                                               ? QStringLiteral("断开信令连接")
+                                               : QStringLiteral("连接信令服务器"));
+    }
+    if (ui->logoutButton) {
+        ui->logoutButton->setText(compact ? QStringLiteral("退出") : QStringLiteral("退出登录"));
+        ui->logoutButton->setToolTip(QStringLiteral("退出当前登录账号"));
+    }
+    if (ui->startMeetingButton) {
+        ui->startMeetingButton->setText(compact ? QStringLiteral("开始") : QStringLiteral("开始会议"));
+        ui->startMeetingButton->setToolTip(QStringLiteral("启动采集、编码与推流"));
+    }
+    if (ui->stopMeetingButton) {
+        ui->stopMeetingButton->setText(compact ? QStringLiteral("结束") : QStringLiteral("结束会议"));
+        ui->stopMeetingButton->setToolTip(QStringLiteral("结束会议并释放音视频资源"));
+    }
+    if (ui->captureImageButton) {
+        ui->captureImageButton->setToolTip(QStringLiteral("保存当前焦点画面或本地画面"));
+    }
+    if (ui->startRecordButton) {
+        ui->startRecordButton->setText(compact ? QStringLiteral("录制") : QStringLiteral("开始AV录制"));
+        ui->startRecordButton->setToolTip(QStringLiteral("开始录制当前会议音视频"));
+    }
+    if (ui->stopRecordButton) {
+        ui->stopRecordButton->setText(compact ? QStringLiteral("停录") : QStringLiteral("停止AV录制"));
+        ui->stopRecordButton->setToolTip(QStringLiteral("停止录制并保存文件"));
+    }
+}
+
+void MainWindow::updateRoomPanelToggleText()
+{
+    if (auto *roomPanelToggleButton = findChild<QToolButton*>("roomPanelToggleButton")) {
+        const bool visible = roomDock && roomDock->isVisible();
+        const bool compact = isCompactMeetingLayout();
+        roomPanelToggleButton->setText(compact
+                                           ? QStringLiteral("侧栏")
+                                           : (visible ? QStringLiteral("收起侧栏") : QStringLiteral("展开侧栏")));
+        roomPanelToggleButton->setToolTip(visible
+                                              ? QStringLiteral("收起右侧成员/聊天/白板侧栏")
+                                              : QStringLiteral("展开右侧成员/聊天/白板侧栏"));
+    }
+}
+
+void MainWindow::updateRoomDockPresentation()
+{
+    if (!roomDock) return;
+
+    auto *tabs = findChild<QTabWidget*>("roomTabWidget");
+    const bool compact = isCompactMeetingLayout();
+    const bool ultraCompact = isUltraCompactMeetingLayout();
+
+    int minDock = ultraCompact ? 248 : (compact ? 270 : 300);
+    int maxDock = ultraCompact ? 320 : (compact ? 350 : 380);
+
+    if (tabs) {
+        QWidget *current = tabs->currentWidget();
+        const QString name = current ? current->objectName() : QString();
+        if (name == QStringLiteral("chatTab")) {
+            minDock = ultraCompact ? 268 : (compact ? 290 : 320);
+            maxDock = ultraCompact ? 340 : (compact ? 370 : 400);
+            roomDock->setWindowTitle(QStringLiteral("聊天与消息"));
+        } else if (name == QStringLiteral("whiteboardTab")) {
+            minDock = ultraCompact ? 300 : (compact ? 330 : 360);
+            maxDock = ultraCompact ? 380 : (compact ? 410 : 440);
+            roomDock->setWindowTitle(QStringLiteral("协作白板"));
+        } else if (name == QStringLiteral("eventTab")) {
+            minDock = ultraCompact ? 252 : (compact ? 274 : 300);
+            maxDock = ultraCompact ? 326 : (compact ? 352 : 380);
+            roomDock->setWindowTitle(QStringLiteral("事件与成员"));
+        } else {
+            roomDock->setWindowTitle(QStringLiteral("房间成员"));
+        }
+    }
+
+    roomDock->setMinimumWidth(minDock);
+    roomDock->setMaximumWidth(maxDock);
+    if (roomDock->isVisible() && !roomDock->isFloating()) {
+        const int targetWidth = qBound(minDock, roomDock->width(), maxDock);
+        roomDock->resize(targetWidth, roomDock->height());
+        resizeDocks({roomDock}, {targetWidth}, Qt::Horizontal);
+    }
+}
+
+void MainWindow::applyResponsiveLayout()
+{
+    if (!ui) return;
+
+    const bool compact = isCompactMeetingLayout();
+    const bool ultraCompact = isUltraCompactMeetingLayout();
+
+    updateRoomDockPresentation();
+
+    if (QWidget *localSide = findChild<QWidget*>("localSideFrame")) {
+        localSide->setMinimumWidth(compact ? 148 : 172);
+        localSide->setMaximumWidth(ultraCompact ? 210 : 320);
+    }
+    if (QWidget *localHint = findChild<QWidget*>("localHintFrame")) {
+        localHint->setVisible(!compact);
+    }
+
+    if (QWidget *deviceFrame = findChild<QWidget*>("deviceEdgeFrame")) {
+        deviceFrame->setMinimumWidth(compact ? 150 : 188);
+        deviceFrame->setMaximumWidth(compact ? 210 : 260);
+    }
+    if (QWidget *deviceTitle = findChild<QWidget*>("deviceEdgeTitle")) {
+        deviceTitle->setVisible(!compact);
+    }
+    if (QWidget *ctrlSep1 = findChild<QWidget*>("ctrlSep1")) {
+        ctrlSep1->setVisible(!ultraCompact);
+    }
+    if (QWidget *ctrlSep2 = findChild<QWidget*>("ctrlSep2")) {
+        ctrlSep2->setVisible(!ultraCompact);
+    }
+
+    if (QWidget *beautyStrengthFrame = findChild<QWidget*>("beautyStrengthFrame")) {
+        beautyStrengthFrame->setVisible(!ultraCompact);
+    }
+
+    updateMeetingHeaderUi();
+    updatePrimaryActionTexts();
+    updateRoomPanelToggleText();
+    updateMeetingStatsUi();
 }
 
 // 开始会议主流程：启动采集、编码、推流并同步状态
@@ -222,7 +521,7 @@ void MainWindow::on_startMeetingButton_clicked()
         return;
     }
     appendRoomEvent(QString("房间: %1 用户流: %2").arg(roomId, selfStream));
-    currentPushUrl = QString("rtmp://8.134.203.85/live/%1").arg(selfStream);
+    currentPushUrl = buildRtmpPublishUrl(selfStream);
 
     if (!videoWorker) {
         videoWorker = new VideoCapture;
@@ -535,7 +834,6 @@ void MainWindow::on_stopMeetingButton_clicked()
     }
     signalConnected = false;
     if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
-    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
     //重置会议状态
     memberStates.clear();
     roomHostStream.clear();
@@ -563,6 +861,9 @@ void MainWindow::on_stopMeetingButton_clicked()
     if (ui && ui->remoteVideolabel) {
         ui->remoteVideolabel->clear();
     }
+    refreshSelfControlActions();
+    updatePrimaryActionTexts();
+    updateRoomPanelToggleText();
     updateMeetingStatsUi();
 
     qDebug() << "[Mainwindow] 会议已结束";
@@ -1406,10 +1707,8 @@ void MainWindow::on_logoutButton_clicked()
 
     if (loginPasswordEdit) loginPasswordEdit->clear();
     if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
-    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
-        signalBadgeLabel->setText("信令离线");
-    }
-    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
+    updateMeetingHeaderUi();
+    updatePrimaryActionTexts();
 
     showLoginOverlay(true, "已退出登录，请重新登录");
 }
@@ -1544,7 +1843,7 @@ void MainWindow::applyAdaptiveProfile(int level, bool restartPipeline)
     if (!encThread->isRunning() || !pushThread->isRunning()) return;
 
     if (currentPushUrl.isEmpty() && !selfStream.isEmpty()) {
-        currentPushUrl = QString("rtmp://8.134.203.85/live/%1").arg(selfStream);
+        currentPushUrl = buildRtmpPublishUrl(selfStream);
     }
     if (currentPushUrl.isEmpty()) return;
 
@@ -1643,7 +1942,10 @@ void MainWindow::updateMeetingStatsUi()
         {"流畅", 640, 360, 20, 900000}
     };
 
-    QString stageText = isPublishing ? "推流中" : "未推流";
+    const bool compact = isCompactMeetingLayout();
+    const bool ultraCompact = isUltraCompactMeetingLayout();
+    const QString stageText = isPublishing ? "推流中" : "未推流";
+    const QString stageShortText = isPublishing ? "推流" : "待机";
     QString profileText = "--";
     QString avText = "--";
     QString brText = "--";
@@ -1654,15 +1956,32 @@ void MainWindow::updateMeetingStatsUi()
         brText = QString("%1kbps").arg(p.bitrate / 1000);
     }
 
-    const QString text = QString("%1 | 档位:%2 | %3 | %4 | 重连:信令%5 拉流%6")
-                             .arg(stageText)
-                             .arg(profileText)
-                             .arg(avText)
-                             .arg(brText)
-                             .arg(totalSignalReconnectCount)
-                             .arg(totalPullRetryCount);
+    const QString fullText = QString("%1 | 档位:%2 | %3 | %4 | 重连:信令%5 拉流%6")
+                                 .arg(stageText)
+                                 .arg(profileText)
+                                 .arg(avText)
+                                 .arg(brText)
+                                 .arg(totalSignalReconnectCount)
+                                 .arg(totalPullRetryCount);
+    QString text = fullText;
+    if (ultraCompact) {
+        text = QString("%1 | %2 | %3/%4")
+                   .arg(stageShortText)
+                   .arg(profileText)
+                   .arg(totalSignalReconnectCount)
+                   .arg(totalPullRetryCount);
+    } else if (compact) {
+        text = QString("%1 | %2 | %3 | %4 | 重连%5/%6")
+                   .arg(stageText)
+                   .arg(profileText)
+                   .arg(avText)
+                   .arg(brText == "--" ? brText : brText.replace("kbps", "k"))
+                   .arg(totalSignalReconnectCount)
+                   .arg(totalPullRetryCount);
+    }
     if (meetingStatsLabel) {
         meetingStatsLabel->setText(text);
+        meetingStatsLabel->setToolTip(fullText);
     }
 }
 
@@ -1758,11 +2077,10 @@ void MainWindow::openSignalConnection()
     }
 
     if (signalStateLabel) signalStateLabel->setText("信令: 连接中");
-    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
-        signalBadgeLabel->setText("信令连接中");
-    }
     appendRoomEvent(QString("连接信令服务器: %1").arg(signalUrl));
     signalSocket->open(QUrl(signalUrl));
+    updateMeetingHeaderUi();
+    updatePrimaryActionTexts();
 }
 
 
@@ -1863,13 +2181,45 @@ void MainWindow::setupSignalUi()
     }
 
     if (roomDock) {
-        roomDock->setMinimumWidth(340);
-        roomDock->setMaximumWidth(520);
+        roomDock->setMinimumWidth(300);
+        roomDock->setMaximumWidth(420);
         roomDock->setAllowedAreas(Qt::RightDockWidgetArea);
         roomDock->setFeatures(QDockWidget::DockWidgetClosable
                               | QDockWidget::DockWidgetMovable
                               | QDockWidget::DockWidgetFloatable);
     }
+    if (auto *roomPanelToggleButton = findChild<QToolButton*>("roomPanelToggleButton")) {
+        auto syncRoomPanelToggle = [this, roomPanelToggleButton]() {
+            const bool visible = roomDock && roomDock->isVisible();
+            QSignalBlocker blocker(roomPanelToggleButton);
+            roomPanelToggleButton->setChecked(visible);
+            updateRoomPanelToggleText();
+            updateRoomDockPresentation();
+        };
+        disconnect(roomPanelToggleButton, nullptr, this, nullptr);
+        connect(roomPanelToggleButton, &QToolButton::clicked, this, [this, syncRoomPanelToggle](bool checked) {
+            if (!roomDock) return;
+            roomDock->setVisible(checked);
+            if (checked) {
+                roomDock->raise();
+            }
+            syncRoomPanelToggle();
+        });
+        if (roomDock) {
+            disconnect(roomDock, nullptr, this, nullptr);
+            connect(roomDock, &QDockWidget::visibilityChanged, this, [syncRoomPanelToggle](bool) {
+                syncRoomPanelToggle();
+            });
+        }
+        syncRoomPanelToggle();
+    }
+    if (auto *tabs = findChild<QTabWidget*>("roomTabWidget")) {
+        disconnect(tabs, nullptr, this, nullptr);
+        connect(tabs, &QTabWidget::currentChanged, this, [this](int) {
+            updateRoomDockPresentation();
+        });
+    }
+    applyResponsiveLayout();
     if (auto *tabs = findChild<QTabWidget*>("roomTabWidget")) {
         if (tabs->currentIndex() < 0 || tabs->currentIndex() == 3) {
             tabs->setCurrentIndex(0);
@@ -2068,9 +2418,7 @@ void MainWindow::refreshSelfControlActions()
     if(selfShareToggleAction){
         selfShareToggleAction->setText(localScreenShareOn?"停止屏幕共享":"开始屏幕共享");
     }
-    if(auto *shareBadgeLabel=findChild<QLabel*>("shareBadgeLabel")){
-        shareBadgeLabel->setText(localScreenShareOn?QString("共享:%1").arg(shareSourceName):"共享:关");
-    }
+    updateMeetingHeaderUi();
     if(whiteboardClearButton){
         whiteboardClearButton->setEnabled(canClearWhiteboard());
     }
@@ -2348,15 +2696,27 @@ void MainWindow::setupRemoteGridUi()
 void MainWindow::syncRemoteContainerGeometry()
 {
     if (!remoteContainer || !ui) return;
-    QWidget *stage = findChild<QWidget*>("remoteStageFrame");
-    if (!stage) {
-        stage = ui->centralwidget;
+
+    QWidget *targetParent = nullptr;
+    QRect targetRect;
+    if (focusPreviewFullScreen && ui->centralwidget) {
+        targetParent = ui->centralwidget;
+        targetRect = ui->centralwidget->rect();
+    } else {
+        QWidget *stage = findChild<QWidget*>("remoteStageFrame");
+        if (!stage) {
+            stage = ui->centralwidget;
+        }
+        targetParent = stage;
+        targetRect = stage->rect().adjusted(8, 8, -8, -8);
     }
-    if (remoteContainer->parentWidget() != stage) {
-        remoteContainer->setParent(stage);
+
+    if (!targetParent) return;
+    if (remoteContainer->parentWidget() != targetParent) {
+        remoteContainer->setParent(targetParent);
     }
-    const QRect full = stage->rect();
-    remoteContainer->setGeometry(full.adjusted(8, 8, -8, -8));
+    remoteContainer->setGeometry(targetRect);
+    remoteContainer->show();
     remoteContainer->raise();
 }
 
@@ -2570,9 +2930,7 @@ bool MainWindow::ensureRoomIdentity(bool askRoomIfEmpty)
     }
 
     selfStream = QString("%1_%2").arg(roomId, userId);
-    if (auto *meetingCodeLabel = findChild<QLabel*>("meetingCodeLabel")) {
-        meetingCodeLabel->setText(QString("房间: %1  我: %2").arg(roomId, selfStream));
-    }
+    updateMeetingHeaderUi();
     return true;
 }
 
@@ -2918,10 +3276,8 @@ void MainWindow::onSignalConnected()
     signalAuthed = false;
     authRegisterTried = pendingAuthRegister;
     if (signalStateLabel) signalStateLabel->setText("信令: 已连接");
-    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
-        signalBadgeLabel->setText("信令在线");
-    }
-    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("断开信令");
+    updateMeetingHeaderUi();
+    updatePrimaryActionTexts();
 
     if (reconnectSnapshot > 0) {
         ++totalSignalReconnectCount;
@@ -2945,10 +3301,8 @@ void MainWindow::onSignalDisconnected()
     signalConnected = false;
     if (shuttingDown) return;
     if (signalStateLabel) signalStateLabel->setText("信令: 未连接");
-    if (auto *signalBadgeLabel = findChild<QLabel*>("signalBadgeLabel")) {
-        signalBadgeLabel->setText("信令离线");
-    }
-    if (ui && ui->startReceiveButton) ui->startReceiveButton->setText("连接信令");
+    updateMeetingHeaderUi();
+    updatePrimaryActionTexts();
     appendRoomEvent("信令已断开");
 
     // 手动断开信令时，立即停止当前拉流，避免继续播放远端。
@@ -3568,7 +3922,7 @@ void MainWindow::ensurePullSession(const QString &stream)
     });
 
     sess->thread->start(QThread::HighPriority);
-    const QString url = QString("rtmp://8.134.203.85/live/%1").arg(stream);
+    const QString url = buildRtmpPlayUrl(stream);
     QMetaObject::invokeMethod(sess->puller, "startPull", Qt::QueuedConnection, Q_ARG(QString, url));
     appendRoomEvent(QString("开始拉流: %1").arg(stream));
 }

@@ -111,6 +111,19 @@ private slots:
     void onRoomListContextMenu(const QPoint &pos);       // 右键管理菜单
     void onSendChatClicked();                            // 发送聊天消息
 
+    void applyResponsiveLayout();                       // 根据窗口宽度调整紧凑布局
+    bool isCompactMeetingLayout() const;
+    bool isUltraCompactMeetingLayout() const;
+    void updateMeetingHeaderUi();
+    void updatePrimaryActionTexts();
+    void updateRoomPanelToggleText();
+    void updateRoomDockPresentation();
+
+    void loadAppConfig();
+    QString resolveAppConfigPath() const;
+    QString buildRtmpPublishUrl(const QString &stream) const;
+    QString buildRtmpPlayUrl(const QString &stream) const;
+
 private:
     // =====================================================
     // 成员状态模型（由服务端 members 快照驱动）
@@ -307,7 +320,11 @@ private:
     // ===== 信令连接状态 =====
     QWebSocket *signalSocket = nullptr; // WebSocket 客户端
     bool signalConnected = false;       // 当前是否连接成功
-    QString signalUrl = "ws://8.134.203.85:9001"; // 信令服务地址（当前硬编码）
+    QString signalUrl = "ws://8.134.203.85:9001"; // 信令服务地址
+    QString rtmpPublishBaseUrl = "rtmp://8.134.203.85/live"; // RTMP推流基地址
+    QString rtmpPlayBaseUrl = "rtmp://8.134.203.85/live";    // RTMP拉流基地址
+    QString activeDeployProfile = "cloud";                   // 当前部署配置名
+    QString appConfigPath;                                    // 实际加载的配置文件路径
     QTimer *signalReconnectTimer = nullptr; // 重连计时器
     int signalReconnectAttempt = 0;         // 当前重连尝试次数
     int signalReconnectMaxAttempt = 12;     // 最大重连次数

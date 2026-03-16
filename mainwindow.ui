@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1560</width>
-    <height>860</height>
+    <width>1366</width>
+    <height>820</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,28 +16,31 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="mainVerticalLayout">
     <property name="spacing">
-     <number>8</number>
+     <number>6</number>
     </property>
     <property name="leftMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="topMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="rightMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
     <property name="bottomMargin">
-     <number>10</number>
+     <number>8</number>
     </property>
     <item>
      <widget class="QFrame" name="topBarFrame">
-      <property name="styleSheet">
-       <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
+       <property name="styleSheet">
+        <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
 QLabel#meetingTitleLabel{color:#f5f7fb;font-size:16px;font-weight:700;}
 QLabel#meetingCodeLabel,QLabel#signalBadgeLabel,QLabel#shareBadgeLabel,QLabel#meetingStatsLabel{color:#d5deed;background:#2a3140;padding:4px 8px;border-radius:6px;}
-QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
-      </property>
+QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}
+QToolButton#roomPanelToggleButton{background:#2a3140;color:#e7eefb;border:1px solid #41506a;border-radius:6px;padding:4px 10px;font-weight:600;}
+QToolButton#roomPanelToggleButton:hover{background:#34415a;}
+QToolButton#roomPanelToggleButton:checked{background:#3a4b68;border-color:#5f79a3;}</string>
+       </property>
       <property name="frameShape">
        <enum>QFrame::Shape::StyledPanel</enum>
       </property>
@@ -101,10 +104,23 @@ QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
          </property>
         </widget>
        </item>
-       <item>
-        <spacer name="topSpacer">
-         <property name="orientation">
-          <enum>Qt::Orientation::Horizontal</enum>
+        <item>
+         <widget class="QToolButton" name="roomPanelToggleButton">
+          <property name="text">
+           <string>成员面板</string>
+          </property>
+          <property name="checkable">
+           <bool>true</bool>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="topSpacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -126,7 +142,7 @@ QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
        <widget class="QFrame" name="remoteStageFrame">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-          <horstretch>4</horstretch>
+          <horstretch>6</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
@@ -174,14 +190,14 @@ QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}</string>
       <item>
        <widget class="QFrame" name="localSideFrame">
         <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
-          <horstretch>2</horstretch>
+          <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+          <horstretch>1</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
         </property>
         <property name="minimumSize">
          <size>
-          <width>200</width>
+          <width>172</width>
           <height>0</height>
          </size>
         </property>
@@ -212,8 +228,8 @@ QLabel#localHintBody{color:#aeb8cb;}</string>
           <widget class="QLabel" name="localVideolabel">
            <property name="minimumSize">
             <size>
-             <width>180</width>
-             <height>110</height>
+             <width>160</width>
+             <height>96</height>
             </size>
            </property>
            <property name="styleSheet">
@@ -314,8 +330,8 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
        <item>
         <layout class="QHBoxLayout" name="bottomPrimaryRow">
          <property name="spacing">
-          <number>6</number>
-         </property>
+          <number>4</number>
+          </property>
          <item>
           <widget class="QPushButton" name="startReceiveButton">
            <property name="text">
@@ -447,10 +463,10 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
              <widget class="QSlider" name="beautyStrengthSlider">
               <property name="minimumSize">
                <size>
-                <width>72</width>
-                <height>0</height>
-               </size>
-              </property>
+                 <width>60</width>
+                 <height>0</height>
+                </size>
+               </property>
               <property name="minimum">
                <number>0</number>
               </property>
@@ -517,7 +533,7 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
            </property>
            <property name="minimumSize">
             <size>
-             <width>230</width>
+             <width>188</width>
              <height>0</height>
             </size>
            </property>
@@ -550,21 +566,21 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
             <item>
              <widget class="QComboBox" name="cameraDevicecomboBox">
               <property name="minimumSize">
-               <size>
-                <width>84</width>
-                <height>28</height>
-               </size>
-              </property>
+                <size>
+                 <width>72</width>
+                 <height>28</height>
+                </size>
+               </property>
              </widget>
             </item>
             <item>
              <widget class="QComboBox" name="audioDevicecomboBox">
               <property name="minimumSize">
-               <size>
-                <width>84</width>
-                <height>28</height>
-               </size>
-              </property>
+                <size>
+                 <width>72</width>
+                 <height>28</height>
+                </size>
+               </property>
              </widget>
             </item>
            </layout>
@@ -580,13 +596,13 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
   <widget class="QDockWidget" name="roomDock">
    <property name="minimumSize">
     <size>
-     <width>481</width>
-     <height>417</height>
+     <width>300</width>
+     <height>360</height>
     </size>
    </property>
    <property name="maximumSize">
     <size>
-     <width>520</width>
+     <width>420</width>
      <height>524287</height>
     </size>
    </property>
@@ -596,7 +612,7 @@ QListWidget#roomUserList{background:#111722;border:1px solid #2f394d;border-radi
 QListWidget#roomUserList::item{padding:6px 6px;}
 QListWidget#roomUserList::item:selected{background:#2b3850;border:1px solid #48608a;border-radius:4px;}
 QTabWidget::pane{border:1px solid #2f394d;border-radius:6px;background:#1a2230;}
-QTabBar::tab{background:#263146;color:#ced8eb;padding:6px 12px;border-top-left-radius:4px;border-top-right-radius:4px;}
+QTabBar::tab{background:#263146;color:#ced8eb;padding:5px 10px;min-width:0;border-top-left-radius:4px;border-top-right-radius:4px;}
 QTabBar::tab:selected{background:#334260;color:#f3f7ff;}
 QPlainTextEdit#roomEventLog,QPlainTextEdit#chatMessageLog{background:#111722;border:1px solid #2f394d;border-radius:6px;color:#d6deef;}
 QTextEdit#chatInputEdit{background:#0f1622;border:1px solid #2f394d;border-radius:6px;color:#e7eefb;padding:4px 8px;}
@@ -613,21 +629,21 @@ QPushButton#sendChatButton:pressed{background:#2e425f;}</string>
    </attribute>
    <widget class="QWidget" name="dockWidgetContents">
     <layout class="QVBoxLayout" name="roomDockLayout">
-     <property name="spacing">
-      <number>6</number>
-     </property>
-     <property name="leftMargin">
-      <number>8</number>
-     </property>
-     <property name="topMargin">
-      <number>8</number>
-     </property>
-     <property name="rightMargin">
-      <number>8</number>
-     </property>
-     <property name="bottomMargin">
-      <number>8</number>
-     </property>
+      <property name="spacing">
+       <number>6</number>
+      </property>
+      <property name="leftMargin">
+       <number>6</number>
+      </property>
+      <property name="topMargin">
+       <number>6</number>
+      </property>
+      <property name="rightMargin">
+       <number>6</number>
+      </property>
+      <property name="bottomMargin">
+       <number>6</number>
+      </property>
      <item>
       <widget class="QFrame" name="roomHeaderFrame">
        <property name="styleSheet">
@@ -638,18 +654,18 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
         <enum>QFrame::Shape::StyledPanel</enum>
        </property>
        <layout class="QHBoxLayout" name="roomHeaderLayout">
-        <property name="leftMargin">
-         <number>8</number>
-        </property>
-        <property name="topMargin">
-         <number>6</number>
-        </property>
-        <property name="rightMargin">
-         <number>8</number>
-        </property>
-        <property name="bottomMargin">
-         <number>6</number>
-        </property>
+         <property name="leftMargin">
+          <number>6</number>
+         </property>
+         <property name="topMargin">
+          <number>5</number>
+         </property>
+         <property name="rightMargin">
+          <number>6</number>
+         </property>
+         <property name="bottomMargin">
+          <number>5</number>
+         </property>
         <item>
          <widget class="QLabel" name="signalStateLabel">
           <property name="text">
@@ -1011,10 +1027,10 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1560</width>
-     <height>25</height>
-    </rect>
-   </property>
+      <width>1366</width>
+      <height>25</height>
+     </rect>
+    </property>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>

@@ -99,7 +99,8 @@ target_link_libraries(SmartMeet
   "D:/lib/ffmpeg-7.1.1-full_build-shared/lib/swresample.lib"
   "D:/lib/ffmpeg-7.1.1-full_build-shared/lib/swscale.lib"
   "D:/lib/ffmpeg-7.1.1-full_build-shared/lib/avdevice.lib"
-  "D:/Opencv/opencv-4.8.0-windows/opencv/build/x64/vc16/lib/opencv_world480d.lib"
+  "$<$<CONFIG:Debug>:D:/Opencv/opencv-4.8.0-windows/opencv/build/x64/vc16/lib/opencv_world480d.lib>"
+  "$<$<NOT:$<CONFIG:Debug>>:D:/Opencv/opencv-4.8.0-windows/opencv/build/x64/vc16/lib/opencv_world480.lib>"
   mrwebrtc
 )
 #自动拷贝DLL文件到构建目录(仅适用windows+fffmpeg DLL)
@@ -111,6 +112,11 @@ add_custom_command(TARGET SmartMeet POST_BUILD
 add_custom_command(TARGET SmartMeet POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
   "${MRWEBRTC_LIB_DIR}/mrwebrtc.dll"
+  $<TARGET_FILE_DIR:SmartMeet>
+)
+add_custom_command(TARGET SmartMeet POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+  "${CMAKE_CURRENT_SOURCE_DIR}/smartmeet.ini"
   $<TARGET_FILE_DIR:SmartMeet>
 )
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -132,6 +138,9 @@ install(TARGETS SmartMeet
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/smartmeet.ini"
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
 if(QT_VERSION_MAJOR EQUAL 6)
