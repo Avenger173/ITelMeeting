@@ -9,8 +9,8 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v0.6（结构重构版） |
-| 更新日期 | 2026-03-13 |
+| 文档版本 | v0.6.1（S3 收口版） |
+| 更新日期 | 2026-03-16 |
 | 适用范围 | 开发 / 测试 / 部署 / 面试展示 |
 | 代码仓库基线 | `SmartMeet` + 独立信令服务 `signalTest` |
 | 当前执行主线 | `S0 -> S7`（强制顺序） |
@@ -45,7 +45,7 @@
 
 ### 1.2 交付目标
 - 可运行的 Windows 客户端（`exe`）。
-- 云端可部署的一套服务（`ZLMediaKit + signalTest + SQLite`）。
+- 云端可部署的一套服务（`ZLMediaKit + signalTest + MySQL`，SQLite 作为本地开发/迁移源保留）。
 - 完整回归清单、风险台账、部署文档与演示流程。
 
 ---
@@ -56,7 +56,7 @@
 - 媒体：RTMP（推流/拉流）+ FFmpeg 编解码。
 - 信令：WebSocket（独立 `signalTest` 服务）。
 - UI：Qt Widgets + `mainwindow.ui`（Designer 主导）。
-- 数据：信令服务内置 SQLite（用户与会议事件）。
+- 数据：信令服务已支持 `QSQLITE/QMYSQL` 双栈；当前云端默认使用 MySQL，本地可用 SQLite 或 MySQL。
 
 ### 2.2 已稳定的能力（主干）
 - 多人房间成员列表与状态同步（`pub/audio/video/role/share`）。
@@ -98,7 +98,7 @@
   - 权限控制（host/cohost/member）。
   - 聊天与白板信令转发。
   - 登录注册鉴权。
-  - 会议事件落库（SQLite）。
+  - 会议事件落库（SQLite/MySQL 双栈）。
 
 ### 3.3 典型链路
 - 入会：客户端连接信令 -> `join` -> 收成员列表。
@@ -123,7 +123,9 @@
 - `CMakeLists.txt`：构建配置（当前偏 Windows，本地绝对路径较多）。
 
 ### 4.2 信令服务关键文件（独立目录）
-- `D:\QTcoding\signalTest\main.cpp`：信令主服务（含 SQLite）。
+- `D:\QTcoding\signalTest\main.cpp`：信令主服务、配置加载、SQLite 迁移入口。
+- `D:\QTcoding\signalTest\signalstorage.cpp/.h`：数据访问层、自动建表、SQLite/MySQL 双驱动。
+- `D:\QTcoding\signalTest\signalserver.ini`：信令服务监听地址与数据库配置。
 
 ### 4.3 当前需重点技术债
 - `mainwindow.h/.cpp` 存在地址硬编码，需 S2 配置化。
@@ -162,7 +164,7 @@
 - 截图。
 
 6. 账号与事件
-- 注册/登录（signalTest + SQLite）。
+- 注册/登录（signalTest + SQLite/MySQL）。
 - `meeting_events` 写入。
 
 ### 5.2 在做（收口优化）
@@ -216,7 +218,7 @@
 - 同机部署：
   - ZLMediaKit
   - signalTest
-  - SQLite 数据文件
+  - MySQL（推荐）或 SQLite（仅本地开发/迁移源）
 
 ### 7.2 安全组端口建议
 - TCP：22、1935、9001、8080（按实际 HTTP 端口）、可选 80/443。
@@ -230,7 +232,7 @@ add-apt-repository -y universe
 apt update
 apt install -y build-essential cmake git pkg-config libssl-dev zlib1g-dev libevent-dev \
   libgl1-mesa-dev libopengl-dev \
-  qt6-base-dev qt6-base-dev-tools libqt6websockets6-dev libqt6sql6-sqlite
+  qt6-base-dev qt6-base-dev-tools libqt6websockets6-dev libqt6sql6-sqlite libqt6sql6-mysql
 ```
 
 ### 7.4 编译与启动 ZLMediaKit
@@ -284,6 +286,25 @@ cmake --build . -j"$(nproc)"
 ./signalTest
 ```
 
+运行目录配置文件：
+- `/opt/smartmeet/signalTest/build/signalserver.ini`
+
+最小 MySQL 配置示例：
+```ini
+[server]
+listen_host=0.0.0.0
+listen_port=9001
+
+[database]
+driver=QMYSQL
+database_name=smartmeet
+host=127.0.0.1
+port=3306
+user=smartmeet
+password=StrongPass_123!
+connect_options=
+```
+
 `/etc/systemd/system/smartmeet-signal.service`：
 ```ini
 [Unit]
@@ -308,7 +329,70 @@ systemctl enable --now smartmeet-signal
 systemctl status smartmeet-signal --no-pager
 ```
 
-### 7.6 运维常用命令
+### 7.6 云端切换到 MySQL（已实测通过）
+1. 安装 MySQL 与 Qt MySQL 驱动：
+```bash
+apt update
+apt install -y mysql-server libqt6sql6-mysql
+systemctl enable --now mysql
+```
+
+2. 建库与业务账号：
+```bash
+mysql -u root -p
+```
+
+```sql
+CREATE DATABASE IF NOT EXISTS smartmeet CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'smartmeet'@'127.0.0.1' IDENTIFIED BY 'StrongPass_123!';
+CREATE USER IF NOT EXISTS 'smartmeet'@'localhost' IDENTIFIED BY 'StrongPass_123!';
+GRANT ALL PRIVILEGES ON smartmeet.* TO 'smartmeet'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON smartmeet.* TO 'smartmeet'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+3. 修改 `/opt/smartmeet/signalTest/build/signalserver.ini` 为 MySQL 配置。
+
+4. 先停止 systemd，前台验证一次：
+```bash
+systemctl stop smartmeet-signal
+cd /opt/smartmeet/signalTest/build
+./signalTest
+```
+
+若日志出现 `Signal server listening on ws://0.0.0.0:9001`，说明连接与自动建表成功。
+
+5. 再切回 systemd：
+```bash
+systemctl restart smartmeet-signal
+systemctl reset-failed smartmeet-signal
+systemctl status smartmeet-signal --no-pager
+journalctl -u smartmeet-signal -n 50 --no-pager
+```
+
+6. 验证云端 MySQL：
+```bash
+mysql -u root -p
+```
+
+```sql
+USE smartmeet;
+SHOW TABLES;
+SELECT COUNT(*) FROM users;
+SELECT COUNT(*) FROM meeting_events;
+```
+
+### 7.7 云端 SQLite -> MySQL 迁移
+若旧云端实例曾使用 SQLite，可直接使用内置迁移命令：
+
+```bash
+systemctl stop smartmeet-signal
+cd /opt/smartmeet/signalTest/build
+./signalTest --migrate-sqlite /opt/smartmeet/signalTest/build/smartmeet_auth.db
+systemctl restart smartmeet-signal
+```
+
+### 7.8 运维常用命令
 ```bash
 systemctl status zlm --no-pager
 systemctl status smartmeet-signal --no-pager
@@ -357,20 +441,32 @@ Test-NetConnection <ECS公网IP> -Port 8080
 
 ### 9.1 当前（已落地）
 - 数据库在信令服务侧（`signalTest`）。
-- 当前驱动：`QSQLITE`。
+- 已支持驱动：`QSQLITE / QMYSQL`。
+- 当前默认配置：MySQL。
+- 当前本地验证：SQLite 和 MySQL 均已跑通。
+- 当前云端验证：MySQL 已跑通，`users` / `meeting_events` 可自动建表并正常写入。
 - 已有核心表：
   - `users`
   - `meeting_events`
 
 ### 9.2 S3 目标
 - 数据访问层抽象，支持 `QSQLITE/QMYSQL` 双驱动切换。
-- 提供 MySQL 建表脚本和迁移脚本。
+- 提供 MySQL 自动建表与 SQLite 迁移命令。
 - 保留 SQLite 作为本地开发/回退方案。
 
 ### 9.3 迁移原则
 - 先兼容，再切换。
 - 同一业务接口在 SQLite/MySQL 行为一致。
 - 切换过程可回退，不阻断现网演示。
+
+### 9.4 当前实现细节
+- schema 初始化入口：`SignalStorage::open()`。
+- 用户表初始化：`AuthRepository::initSchema()`。
+- 事件表初始化：`MeetingEventRepository::initSchema()`。
+- SQLite 迁移入口：`signalTest --migrate-sqlite <sqlite_db_path>`。
+- 推荐使用方式：
+  - 本地快速开发：SQLite 或 MySQL 均可。
+  - 云端长期运行：MySQL。
 
 ---
 
@@ -481,4 +577,3 @@ journalctl -u smartmeet-signal -n 200 -l
 ```bash
 journalctl -u zlm -f -n 100 -l
 ```
-
