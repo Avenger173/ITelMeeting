@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 )
 
 type Config struct {
+	ConfigPath string
+
 	ListenHost string
 	ListenPort int
 
@@ -22,6 +25,15 @@ type Config struct {
 }
 
 func ResolvePath() string {
+	var flagPath string
+	flag.StringVar(&flagPath, "config", "", "path to signalserver.ini")
+	if !flag.Parsed() {
+		flag.Parse()
+	}
+	if p := strings.TrimSpace(flagPath); p != "" {
+		return p
+	}
+
 	if p := strings.TrimSpace(os.Getenv("SMARTMEET_GO_SIGNAL_CONFIG")); p != "" {
 		return p
 	}
@@ -47,6 +59,7 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
+		ConfigPath: path,
 		ListenHost: cfgFile.Section("server").Key("listen_host").MustString("0.0.0.0"),
 		ListenPort: cfgFile.Section("server").Key("listen_port").MustInt(9002),
 
@@ -77,5 +90,18 @@ func (c Config) DSN() string {
 		c.DBHost,
 		c.DBPort,
 		c.DBName,
+	)
+}
+
+func (c Config) StartupSummary() string {
+	return fmt.Sprintf(
+		`path=%q listen=%q dbDriver=%q dbName=%q dbHost=%q dbPort=%d dbUser=%q`,
+		c.ConfigPath,
+		c.ListenAddr(),
+		c.DBDriver,
+		c.DBName,
+		c.DBHost,
+		c.DBPort,
+		c.DBUser,
 	)
 }

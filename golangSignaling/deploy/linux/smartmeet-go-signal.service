@@ -1,0 +1,14 @@
+[Unit]
+Description=SmartMeet Go Signal Server
+After=network.target mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/smartmeet/golangSignaling
+ExecStart=/opt/smartmeet/golangSignaling/signalserver -config /opt/smartmeet/golangSignaling/signalserver.ini
+Restart=always
+RestartSec=2
+Environment=TZ=Asia/Shanghai
+
+[Install]
+WantedBy=multi-user.target

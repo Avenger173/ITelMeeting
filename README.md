@@ -9,10 +9,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v0.6.1（S3 收口版） |
-| 更新日期 | 2026-03-16 |
+| 文档版本 | v0.7.0（S5 落地版） |
+| 更新日期 | 2026-03-20 |
 | 适用范围 | 开发 / 测试 / 部署 / 面试展示 |
-| 代码仓库基线 | `SmartMeet` + 独立信令服务 `signalTest` |
+| 代码仓库基线 | `SmartMeet` + `golangSignaling`（线上） + `signalTest`（历史实现） |
 | 当前执行主线 | `S0 -> S3 -> S5 -> S6 -> S7`（`S4` 暂缓） |
 
 ---
@@ -45,7 +45,7 @@
 
 ### 1.2 交付目标
 - 可运行的 Windows 客户端（`exe`）。
-- 云端可部署的一套服务（`ZLMediaKit + signalTest + MySQL`，SQLite 作为本地开发/迁移源保留）。
+- 云端可部署的一套服务（`ZLMediaKit + golangSignaling + MySQL`，SQLite 作为历史迁移源保留）。
 - 完整回归清单、风险台账、部署文档与演示流程。
 
 ---
@@ -54,9 +54,9 @@
 
 ### 2.1 当前技术基线
 - 媒体：RTMP（推流/拉流）+ FFmpeg 编解码。
-- 信令：WebSocket（独立 `signalTest` 服务）。
+- 信令：WebSocket（当前线上为 `golangSignaling`，本地/历史兼容 `signalTest`）。
 - UI：Qt Widgets + `mainwindow.ui`（Designer 主导）。
-- 数据：信令服务已支持 `QSQLITE/QMYSQL` 双栈；当前云端默认使用 MySQL，本地可用 SQLite 或 MySQL。
+- 数据：当前线上信令使用 Go + MySQL；`signalTest` 仍保留 `QSQLITE/QMYSQL` 双栈用于历史兼容与迁移。
 
 ### 2.2 已稳定的能力（主干）
 - 多人房间成员列表与状态同步（`pub/audio/video/role/share`）。
@@ -68,10 +68,10 @@
 ### 2.3 仍需改进的重点
 - 美颜效果和性能（自然度不足、部分参数表现不稳定）。
 - 配置化（仍有服务地址硬编码残留，需 S2 全面收口）。
-- 数据库升级（SQLite 到 MySQL 双栈，S3）。
+- 配置化收口仍有残余（客户端少量地址与构建路径仍需继续清理）。
 - WebRTC 主链迁移（S4，暂缓）。
-- Go 信令替换（S5）。
 - OpenGL 渲染降载（S6）。
+- 客户端与 Go 信令的长期稳定性、日志粒度、运维脚本仍需继续收口。
 
 ---
 
@@ -93,12 +93,14 @@
 
 ### 3.2 服务端架构（当前部署）
 - ZLMediaKit：媒体收发中枢（RTMP）。
-- signalTest（Qt WebSocket 服务）：
+- `golangSignaling`（当前线上 WebSocket 信令）：
   - 房间状态管理。
   - 权限控制（host/cohost/member）。
-  - 聊天与白板信令转发。
+  - 聊天、白板、主持控制协议转发。
   - 登录注册鉴权。
-  - 会议事件落库（SQLite/MySQL 双栈）。
+  - MySQL 持久化（`users`、`meeting_events`）。
+- `signalTest`（Qt WebSocket 历史实现）：
+  - 保留为协议对照、历史兼容与 SQLite 迁移工具。
 
 ### 3.3 典型链路
 - 入会：客户端连接信令 -> `join` -> 收成员列表。
@@ -123,13 +125,17 @@
 - `CMakeLists.txt`：构建配置（当前偏 Windows，本地绝对路径较多）。
 
 ### 4.2 信令服务关键文件（独立目录）
-- `D:\QTcoding\signalTest\main.cpp`：信令主服务、配置加载、SQLite 迁移入口。
-- `D:\QTcoding\signalTest\signalstorage.cpp/.h`：数据访问层、自动建表、SQLite/MySQL 双驱动。
-- `D:\QTcoding\signalTest\signalserver.ini`：信令服务监听地址与数据库配置。
+- `D:\QTcoding\SmartMeet\golangSignaling\cmd\signalserver\main.go`：Go 信令启动入口、HTTP/WebSocket 服务装配、优雅退出。
+- `D:\QTcoding\SmartMeet\golangSignaling\internal\server\hub.go`：房间状态、成员广播、聊天、白板、主持控制。
+- `D:\QTcoding\SmartMeet\golangSignaling\internal\storage\store.go`：MySQL 连接、自动建表、用户与事件存储。
+- `D:\QTcoding\SmartMeet\golangSignaling\signalserver.ini`：Go 信令监听地址与数据库配置。
+- `D:\QTcoding\signalTest\main.cpp`：历史 C++ 信令实现与 SQLite 迁移入口。
+- `D:\QTcoding\signalTest\signalstorage.cpp/.h`：历史数据访问层、SQLite/MySQL 双驱动。
 
 ### 4.3 当前需重点技术债
-- `mainwindow.h/.cpp` 存在地址硬编码，需 S2 配置化。
-- `CMakeLists.txt` 依赖路径硬编码，需后续工程化收口。
+- `mainwindow.h/.cpp` 仍有少量服务地址与行为逻辑耦合残留，需继续做 S2 收口。
+- `CMakeLists.txt` 与第三方依赖路径仍偏本机化，需后续工程化收口。
+- Go 信令当前已兼容现协议，但日志、配置分层、灰度回滚脚本还不够完整。
 
 ---
 
@@ -164,7 +170,7 @@
 - 截图。
 
 6. 账号与事件
-- 注册/登录（signalTest + SQLite/MySQL）。
+- 注册/登录（当前线上 Go 信令 + MySQL，本地保留 signalTest 历史兼容）。
 - `meeting_events` 写入。
 
 ### 5.2 在做（收口优化）
@@ -176,7 +182,7 @@
 - S2：全面配置化（去硬编码）。
 - S3：SQLite/MySQL 双栈 + 迁移脚本。
 - S4：WebRTC 双栈迁移（RTMP 保底回退，当前暂缓）。
-- S5：Go 信令替换。
+- S5：Go 信令替换（已完成并上线）。
 - S6：OpenGL 渲染升级。
 - S7：交付封版。
 
@@ -217,8 +223,9 @@
 - 1 台 ECS（2C4G，5Mbps 起）。
 - 同机部署：
   - ZLMediaKit
-  - signalTest
-  - MySQL（推荐）或 SQLite（仅本地开发/迁移源）
+  - `golangSignaling`
+  - MySQL（线上）
+  - `signalTest` 仅作为历史兼容与 SQLite 迁移工具保留，不再作为线上主服务
 
 ### 7.2 安全组端口建议
 - TCP：22、1935、9001、8080（按实际 HTTP 端口）、可选 80/443。
@@ -275,19 +282,16 @@ systemctl enable --now zlm
 systemctl status zlm --no-pager
 ```
 
-### 7.5 编译与启动 signalTest
+### 7.5 编译与启动 Go 信令（当前线上）
 ```bash
-cd /opt/smartmeet/signalTest
-rm -rf build
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j"$(nproc)"
-./signalTest
+cd /opt/smartmeet/golangSignaling
+go mod tidy
+go build -o signalserver ./cmd/signalserver
+./signalserver -config ./signalserver.ini
 ```
 
 运行目录配置文件：
-- `/opt/smartmeet/signalTest/build/signalserver.ini`
+- `/opt/smartmeet/golangSignaling/signalserver.ini`
 
 最小 MySQL 配置示例：
 ```ini
@@ -305,18 +309,19 @@ password=StrongPass_123!
 connect_options=
 ```
 
-`/etc/systemd/system/smartmeet-signal.service`：
+`/etc/systemd/system/smartmeet-go-signal.service`：
 ```ini
 [Unit]
-Description=SmartMeet Signal Server
-After=network.target
+Description=SmartMeet Go Signal Server
+After=network.target mysql.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/smartmeet/signalTest/build
-ExecStart=/opt/smartmeet/signalTest/build/signalTest
+WorkingDirectory=/opt/smartmeet/golangSignaling
+ExecStart=/opt/smartmeet/golangSignaling/signalserver -config /opt/smartmeet/golangSignaling/signalserver.ini
 Restart=always
 RestartSec=2
+Environment=TZ=Asia/Shanghai
 
 [Install]
 WantedBy=multi-user.target
@@ -325,15 +330,15 @@ WantedBy=multi-user.target
 启动：
 ```bash
 systemctl daemon-reload
-systemctl enable --now smartmeet-signal
-systemctl status smartmeet-signal --no-pager
+systemctl enable --now smartmeet-go-signal
+systemctl status smartmeet-go-signal --no-pager
 ```
 
-### 7.6 云端切换到 MySQL（已实测通过）
-1. 安装 MySQL 与 Qt MySQL 驱动：
+### 7.6 云端 MySQL（已实测通过）
+1. 安装 MySQL：
 ```bash
 apt update
-apt install -y mysql-server libqt6sql6-mysql
+apt install -y mysql-server
 systemctl enable --now mysql
 ```
 
@@ -351,23 +356,23 @@ GRANT ALL PRIVILEGES ON smartmeet.* TO 'smartmeet'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-3. 修改 `/opt/smartmeet/signalTest/build/signalserver.ini` 为 MySQL 配置。
+3. 修改 `/opt/smartmeet/golangSignaling/signalserver.ini` 为 MySQL 配置。
 
 4. 先停止 systemd，前台验证一次：
 ```bash
-systemctl stop smartmeet-signal
-cd /opt/smartmeet/signalTest/build
-./signalTest
+systemctl stop smartmeet-go-signal
+cd /opt/smartmeet/golangSignaling
+./signalserver -config ./signalserver.ini
 ```
 
 若日志出现 `Signal server listening on ws://0.0.0.0:9001`，说明连接与自动建表成功。
 
 5. 再切回 systemd：
 ```bash
-systemctl restart smartmeet-signal
-systemctl reset-failed smartmeet-signal
-systemctl status smartmeet-signal --no-pager
-journalctl -u smartmeet-signal -n 50 --no-pager
+systemctl restart smartmeet-go-signal
+systemctl reset-failed smartmeet-go-signal
+systemctl status smartmeet-go-signal --no-pager
+journalctl -u smartmeet-go-signal -n 50 --no-pager
 ```
 
 6. 验证云端 MySQL：
@@ -382,24 +387,42 @@ SELECT COUNT(*) FROM users;
 SELECT COUNT(*) FROM meeting_events;
 ```
 
-### 7.7 云端 SQLite -> MySQL 迁移
-若旧云端实例曾使用 SQLite，可直接使用内置迁移命令：
+### 7.7 历史 signalTest：SQLite -> MySQL 迁移
+若旧云端实例曾使用 `signalTest + SQLite`，可直接使用历史迁移命令：
 
 ```bash
 systemctl stop smartmeet-signal
 cd /opt/smartmeet/signalTest/build
 ./signalTest --migrate-sqlite /opt/smartmeet/signalTest/build/smartmeet_auth.db
-systemctl restart smartmeet-signal
 ```
 
-### 7.8 运维常用命令
+迁移完成后，由 Go 信令继续读取同一个 MySQL 库。
+
+### 7.8 signalTest 退役与 Go 信令接管（已实测通过）
+```bash
+systemctl stop smartmeet-signal
+systemctl disable smartmeet-signal
+mv /etc/systemd/system/smartmeet-signal.service /etc/systemd/system/smartmeet-signal.service.bak
+systemctl daemon-reload
+systemctl mask smartmeet-signal
+
+systemctl enable --now smartmeet-go-signal
+systemctl status smartmeet-go-signal --no-pager
+ss -lntp | grep 9001
+```
+
+说明：
+- 旧 `smartmeet-signal` 当前已退役，不再作为线上服务使用。
+- 当前线上信令统一由 `smartmeet-go-signal` 提供。
+
+### 7.9 运维常用命令
 ```bash
 systemctl status zlm --no-pager
-systemctl status smartmeet-signal --no-pager
+systemctl status smartmeet-go-signal --no-pager
 systemctl restart zlm
-systemctl restart smartmeet-signal
+systemctl restart smartmeet-go-signal
 journalctl -u zlm -f -n 100 -l
-journalctl -u smartmeet-signal -f -n 100 -l
+journalctl -u smartmeet-go-signal -f -n 100 -l
 ```
 
 Windows 侧端口验证：
@@ -440,11 +463,11 @@ Test-NetConnection <ECS公网IP> -Port 8080
 ## 9. 数据库与持久化（SQLite -> MySQL）
 
 ### 9.1 当前（已落地）
-- 数据库在信令服务侧（`signalTest`）。
-- 已支持驱动：`QSQLITE / QMYSQL`。
-- 当前默认配置：MySQL。
-- 当前本地验证：SQLite 和 MySQL 均已跑通。
-- 当前云端验证：MySQL 已跑通，`users` / `meeting_events` 可自动建表并正常写入。
+- 线上数据库在 Go 信令服务侧（`golangSignaling` -> MySQL）。
+- 历史 C++ 信令 `signalTest` 已支持驱动：`QSQLITE / QMYSQL`。
+- 当前线上默认配置：MySQL。
+- 当前本地验证：Go 信令 + MySQL 已跑通；`signalTest` 的 SQLite / MySQL 双栈也已跑通。
+- 当前云端验证：Go 信令 + MySQL 已跑通，`users` / `meeting_events` 可自动建表并正常写入。
 - 已有核心表：
   - `users`
   - `meeting_events`
@@ -460,13 +483,14 @@ Test-NetConnection <ECS公网IP> -Port 8080
 - 切换过程可回退，不阻断现网演示。
 
 ### 9.4 当前实现细节
-- schema 初始化入口：`SignalStorage::open()`。
-- 用户表初始化：`AuthRepository::initSchema()`。
-- 事件表初始化：`MeetingEventRepository::initSchema()`。
-- SQLite 迁移入口：`signalTest --migrate-sqlite <sqlite_db_path>`。
+- Go 信令 schema 初始化入口：`golangSignaling/internal/storage/store.go` 中的 `InitSchema()`。
+- 当前线上表：
+  - `users`
+  - `meeting_events`
+- 历史 SQLite 迁移入口：`signalTest --migrate-sqlite <sqlite_db_path>`。
 - 推荐使用方式：
-  - 本地快速开发：SQLite 或 MySQL 均可。
-  - 云端长期运行：MySQL。
+  - 本地快速开发：Go 信令 + MySQL，或 `signalTest` + SQLite/MySQL。
+  - 云端长期运行：Go 信令 + MySQL。
 
 ---
 
@@ -492,7 +516,8 @@ Test-NetConnection <ECS公网IP> -Port 8080
 ### 10.2 当前执行说明
 - 当前版本先不推进 S4。
 - S4 保留在路线图中，作为后续协议升级项，不纳入当前交付主线。
-- 当前实际顺序为：`S0 -> S1 -> S2 -> S3 -> S5 -> S6 -> S7`。
+- S5 已完成：Go 信令已替换云端 `signalTest` 上线。
+- 当前实际顺序更新为：`S0 -> S1 -> S2 -> S3 -> S5(完成) -> S6 -> S7`。
 
 ---
 
@@ -501,6 +526,7 @@ Test-NetConnection <ECS公网IP> -Port 8080
 ### 11.1 模板文件
 - 回归清单：`docs/S0_基线冻结回归清单.md`
 - 风险台账：`docs/S0_风险台账.md`
+- S6 前盘点清单：`docs/S6_进入前盘点清单.md`
 
 ### 11.2 执行频率
 - S0：每次提交必跑。
@@ -523,7 +549,7 @@ Test-NetConnection <ECS公网IP> -Port 8080
 
 ### 12.2 优化池（仅在当前阶段通过后插入）
 - 美颜 V2：ROI + 参数防抖 + 弱网自动降级。
-- 信令服务工程化升级：Go 版本兼容现协议。
+- Go 信令工程化继续收口：日志字段、监控、灰度回滚脚本。
 - 视觉渲染优化：OpenGL 管线。
 - 自动化回归脚本与日志采集工具。
 - 配置中心化（dev/test/prod）。
@@ -551,14 +577,14 @@ Test-NetConnection <ECS公网IP> -Port 8080
 ## 14. 下一步立刻执行什么
 
 ### 当前建议（马上做）
-1. 以当前 RTMP + MySQL 基线为稳定版本，冻结现有协议字段。
-2. 进入 S5：Go 信令替换，目标是“服务端兼容现协议，客户端尽量无感”。
-3. Go 信令稳定后，再进入 S6：OpenGL 渲染升级。
+1. 以当前 RTMP + Go 信令 + MySQL 基线为稳定版本，冻结现有协议字段。
+2. 先完成 S6 前盘点，明确当前 UI/渲染/共享/美颜/录制的基线问题。
+3. 盘点通过后，再进入 S6：OpenGL 渲染升级。
 
 ### 当前阶段的直接技术动作
-- 先整理并固化 `signalTest` 当前 JSON 协议。
-- 明确房间、成员、聊天、白板、主持控制、鉴权的服务端状态模型。
-- 在不改客户端协议的前提下启动 Go 版信令 PoC。
+- 固化当前 Go 信令线上配置、systemd 服务名与运维命令。
+- 按 `docs/S6_进入前盘点清单.md` 跑完一轮基线检查。
+- 明确 OpenGL 只替换渲染层，不动现有会议协议和业务模型。
 
 ---
 
@@ -574,9 +600,9 @@ ssh -F NUL root@<ECS公网IP>
 apt install -y libgl1-mesa-dev libopengl-dev
 ```
 
-- signal 服务异常退出定位：
+- Go signal 服务异常退出定位：
 ```bash
-journalctl -u smartmeet-signal -n 200 -l
+journalctl -u smartmeet-go-signal -n 200 -l
 ```
 
 - ZLM 服务日志跟踪：
