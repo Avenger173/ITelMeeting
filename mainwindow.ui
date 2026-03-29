@@ -32,15 +32,15 @@
     </property>
     <item>
      <widget class="QFrame" name="topBarFrame">
-       <property name="styleSheet">
-        <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
+      <property name="styleSheet">
+       <string notr="true">QFrame#topBarFrame{background:#1f2430;border:1px solid #2f3645;border-radius:8px;}
 QLabel#meetingTitleLabel{color:#f5f7fb;font-size:16px;font-weight:700;}
 QLabel#meetingCodeLabel,QLabel#signalBadgeLabel,QLabel#shareBadgeLabel,QLabel#meetingStatsLabel{color:#d5deed;background:#2a3140;padding:4px 8px;border-radius:6px;}
 QLabel#meetingStatsLabel{color:#c7d5ef;background:#253247;}
 QToolButton#roomPanelToggleButton{background:#2a3140;color:#e7eefb;border:1px solid #41506a;border-radius:6px;padding:4px 10px;font-weight:600;}
 QToolButton#roomPanelToggleButton:hover{background:#34415a;}
 QToolButton#roomPanelToggleButton:checked{background:#3a4b68;border-color:#5f79a3;}</string>
-       </property>
+      </property>
       <property name="frameShape">
        <enum>QFrame::Shape::StyledPanel</enum>
       </property>
@@ -104,23 +104,23 @@ QToolButton#roomPanelToggleButton:checked{background:#3a4b68;border-color:#5f79a
          </property>
         </widget>
        </item>
-        <item>
-         <widget class="QToolButton" name="roomPanelToggleButton">
-          <property name="text">
-           <string>成员面板</string>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="checked">
-           <bool>true</bool>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="topSpacer">
-          <property name="orientation">
-           <enum>Qt::Orientation::Horizontal</enum>
+       <item>
+        <widget class="QToolButton" name="roomPanelToggleButton">
+         <property name="text">
+          <string>成员面板</string>
+         </property>
+         <property name="checkable">
+          <bool>true</bool>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="topSpacer">
+         <property name="orientation">
+          <enum>Qt::Orientation::Horizontal</enum>
          </property>
          <property name="sizeHint" stdset="0">
           <size>
@@ -190,7 +190,7 @@ QToolButton#roomPanelToggleButton:checked{background:#3a4b68;border-color:#5f79a
       <item>
        <widget class="QFrame" name="localSideFrame">
         <property name="sizePolicy">
-          <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+         <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
           <horstretch>1</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
@@ -331,7 +331,7 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
         <layout class="QHBoxLayout" name="bottomPrimaryRow">
          <property name="spacing">
           <number>4</number>
-          </property>
+         </property>
          <item>
           <widget class="QPushButton" name="startReceiveButton">
            <property name="text">
@@ -463,10 +463,10 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
              <widget class="QSlider" name="beautyStrengthSlider">
               <property name="minimumSize">
                <size>
-                 <width>60</width>
-                 <height>0</height>
-                </size>
-               </property>
+                <width>60</width>
+                <height>0</height>
+               </size>
+              </property>
               <property name="minimum">
                <number>0</number>
               </property>
@@ -566,21 +566,21 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
             <item>
              <widget class="QComboBox" name="cameraDevicecomboBox">
               <property name="minimumSize">
-                <size>
-                 <width>72</width>
-                 <height>28</height>
-                </size>
-               </property>
+               <size>
+                <width>72</width>
+                <height>28</height>
+               </size>
+              </property>
              </widget>
             </item>
             <item>
              <widget class="QComboBox" name="audioDevicecomboBox">
               <property name="minimumSize">
-                <size>
-                 <width>72</width>
-                 <height>28</height>
-                </size>
-               </property>
+               <size>
+                <width>72</width>
+                <height>28</height>
+               </size>
+              </property>
              </widget>
             </item>
            </layout>
@@ -596,8 +596,8 @@ QLabel#deviceEdgeTitle{color:#9fb0cf;font-weight:600;}</string>
   <widget class="QDockWidget" name="roomDock">
    <property name="minimumSize">
     <size>
-     <width>300</width>
-     <height>360</height>
+     <width>420</width>
+     <height>409</height>
     </size>
    </property>
    <property name="maximumSize">
@@ -617,9 +617,10 @@ QTabBar::tab:selected{background:#334260;color:#f3f7ff;}
 QPlainTextEdit#roomEventLog,QPlainTextEdit#chatMessageLog{background:#111722;border:1px solid #2f394d;border-radius:6px;color:#d6deef;}
 QTextEdit#chatInputEdit{background:#0f1622;border:1px solid #2f394d;border-radius:6px;color:#e7eefb;padding:4px 8px;}
 QTextEdit#chatInputEdit:focus{border:1px solid #4b628c;}
-QPushButton#sendChatButton{background:#344766;color:#f3f7ff;border:1px solid #4e648c;border-radius:6px;padding:4px 12px;}
-QPushButton#sendChatButton:hover{background:#3b5275;}
-QPushButton#sendChatButton:pressed{background:#2e425f;}</string>
+QPushButton#sendChatButton,QPushButton#askAiButton{background:#344766;color:#f3f7ff;border:1px solid #4e648c;border-radius:6px;padding:4px 12px;}
+QPushButton#sendChatButton:hover,QPushButton#askAiButton:hover{background:#3b5275;}
+QPushButton#sendChatButton:pressed,QPushButton#askAiButton:pressed{background:#2e425f;}
+QPushButton#askAiButton:disabled{background:#1f2b3d;color:#7d8ca5;border:1px solid #2f394d;}</string>
    </property>
    <property name="windowTitle">
     <string>房间成员</string>
@@ -629,21 +630,21 @@ QPushButton#sendChatButton:pressed{background:#2e425f;}</string>
    </attribute>
    <widget class="QWidget" name="dockWidgetContents">
     <layout class="QVBoxLayout" name="roomDockLayout">
-      <property name="spacing">
-       <number>6</number>
-      </property>
-      <property name="leftMargin">
-       <number>6</number>
-      </property>
-      <property name="topMargin">
-       <number>6</number>
-      </property>
-      <property name="rightMargin">
-       <number>6</number>
-      </property>
-      <property name="bottomMargin">
-       <number>6</number>
-      </property>
+     <property name="spacing">
+      <number>6</number>
+     </property>
+     <property name="leftMargin">
+      <number>6</number>
+     </property>
+     <property name="topMargin">
+      <number>6</number>
+     </property>
+     <property name="rightMargin">
+      <number>6</number>
+     </property>
+     <property name="bottomMargin">
+      <number>6</number>
+     </property>
      <item>
       <widget class="QFrame" name="roomHeaderFrame">
        <property name="styleSheet">
@@ -654,18 +655,18 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
         <enum>QFrame::Shape::StyledPanel</enum>
        </property>
        <layout class="QHBoxLayout" name="roomHeaderLayout">
-         <property name="leftMargin">
-          <number>6</number>
-         </property>
-         <property name="topMargin">
-          <number>5</number>
-         </property>
-         <property name="rightMargin">
-          <number>6</number>
-         </property>
-         <property name="bottomMargin">
-          <number>5</number>
-         </property>
+        <property name="leftMargin">
+         <number>6</number>
+        </property>
+        <property name="topMargin">
+         <number>5</number>
+        </property>
+        <property name="rightMargin">
+         <number>6</number>
+        </property>
+        <property name="bottomMargin">
+         <number>5</number>
+        </property>
         <item>
          <widget class="QLabel" name="signalStateLabel">
           <property name="text">
@@ -699,7 +700,7 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
      <item>
       <widget class="QTabWidget" name="roomTabWidget">
        <property name="currentIndex">
-        <number>0</number>
+        <number>2</number>
        </property>
        <widget class="QWidget" name="memberTab">
         <attribute name="title">
@@ -808,7 +809,23 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
               <bool>false</bool>
              </property>
              <property name="placeholderText">
-              <string>输入消息，Enter发送，Shift+Enter换行</string>
+              <string>输入消息，Enter发送，Shift+Enter换行，@AI 提问助手</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="askAiButton">
+             <property name="minimumSize">
+              <size>
+               <width>72</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="toolTip">
+              <string>将当前输入发送给本地 AI 助手，不广播到房间</string>
+             </property>
+             <property name="text">
+              <string>AI助手</string>
              </property>
             </widget>
            </item>
@@ -1027,10 +1044,10 @@ QLabel{color:#dce5f8;font-weight:600;}</string>
     <rect>
      <x>0</x>
      <y>0</y>
-      <width>1366</width>
-      <height>25</height>
-     </rect>
-    </property>
+     <width>1366</width>
+     <height>25</height>
+    </rect>
+   </property>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>

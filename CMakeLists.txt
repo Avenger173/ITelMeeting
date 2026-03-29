@@ -40,6 +40,10 @@ set(PROJECT_SOURCES
         mainwindow.cpp
         mainwindow.h
         mainwindow.ui
+        aiassistantdialog.cpp
+        aiassistantdialog.h
+        aiassistantdialog.ui
+        resources.qrc
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

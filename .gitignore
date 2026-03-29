@@ -28,6 +28,12 @@ CMakeFiles/
 # Logs
 *.log
 
+# Python AI service
+pythonAiService/.venv/
+pythonAiService/__pycache__/
+pythonAiService/*.pyc
+pythonAiService/ai_service.local.ini
+
 # Others
 *.DS_Store
 Thumbs.db

@@ -1,4 +1,5 @@
 ﻿#include "mainwindow.h"
+#include "aiassistantdialog.h"
 #include "./ui_mainwindow.h"
 #include <QImage>
 #include <QPixmap>
@@ -157,6 +158,11 @@ MainWindow::MainWindow(QWidget *parent)
     setupLoginUi();
     appendRoomEvent(QString("部署配置已加载：%1 | 信令=%2 | RTMP=%3")
                         .arg(activeDeployProfile, signalUrl, rtmpPublishBaseUrl));
+    if (aiAssistantEnabled && !aiServiceBaseUrl.isEmpty()) {
+        appendRoomEvent(QString("AI 助手已启用：%1").arg(aiServiceBaseUrl));
+    } else {
+        appendRoomEvent("AI 助手未启用");
+    }
     //信令自动重连定时器
     signalReconnectTimer = new QTimer(this);
     signalReconnectTimer->setSingleShot(true);  //单次触发定时器（触发后自动停止）
@@ -243,6 +249,9 @@ void MainWindow::loadAppConfig()
         signalUrl = signalUrl.trimmed();
         rtmpPublishBaseUrl = normalizedUrlBase(rtmpPublishBaseUrl);
         rtmpPlayBaseUrl = normalizedUrlBase(rtmpPlayBaseUrl);
+        aiServiceBaseUrl = normalizedUrlBase(aiServiceBaseUrl);
+        aiTimeoutMs = qMax(1000, aiTimeoutMs);
+        aiAssistantName = aiAssistantName.trimmed().isEmpty() ? QStringLiteral("AI助手") : aiAssistantName.trimmed();
         return;
     }
 
@@ -262,21 +271,39 @@ void MainWindow::loadAppConfig()
                                                  settings.value("network/rtmp_publish_base", rtmpPublishBaseUrl)).toString().trimmed();
     const QString loadedPlay = settings.value(profilePrefix + "rtmp_play_base",
                                               settings.value("network/rtmp_play_base", rtmpPlayBaseUrl)).toString().trimmed();
+    const QString loadedAiUrl = settings.value(profilePrefix + "ai_service_url",
+                                               settings.value("ai/service_url", aiServiceBaseUrl)).toString().trimmed();
+    const bool loadedAiEnabled = settings.value(profilePrefix + "ai_enabled",
+                                                settings.value("ai/enabled", aiAssistantEnabled)).toBool();
+    const int loadedAiTimeout = settings.value(profilePrefix + "ai_timeout_ms",
+                                               settings.value("ai/timeout_ms", aiTimeoutMs)).toInt();
+    const QString loadedAiName = settings.value(profilePrefix + "ai_assistant_name",
+                                                settings.value("ai/assistant_name", aiAssistantName)).toString().trimmed();
 
     if (!loadedSignal.isEmpty()) signalUrl = loadedSignal;
     if (!loadedPublish.isEmpty()) rtmpPublishBaseUrl = loadedPublish;
     if (!loadedPlay.isEmpty()) rtmpPlayBaseUrl = loadedPlay;
+    if (!loadedAiUrl.isEmpty()) aiServiceBaseUrl = loadedAiUrl;
+    aiAssistantEnabled = loadedAiEnabled;
+    aiTimeoutMs = loadedAiTimeout > 0 ? loadedAiTimeout : aiTimeoutMs;
+    if (!loadedAiName.isEmpty()) aiAssistantName = loadedAiName;
     activeDeployProfile = profile;
 
     signalUrl = signalUrl.trimmed();
     rtmpPublishBaseUrl = normalizedUrlBase(rtmpPublishBaseUrl);
     rtmpPlayBaseUrl = normalizedUrlBase(rtmpPlayBaseUrl);
+    aiServiceBaseUrl = normalizedUrlBase(aiServiceBaseUrl);
+    aiTimeoutMs = qMax(1000, aiTimeoutMs);
+    aiAssistantName = aiAssistantName.trimmed().isEmpty() ? QStringLiteral("AI助手") : aiAssistantName.trimmed();
 
     qInfo() << "[Config] loaded profile=" << activeDeployProfile
             << "path=" << appConfigPath
             << "signal=" << signalUrl
             << "rtmpPublish=" << rtmpPublishBaseUrl
-            << "rtmpPlay=" << rtmpPlayBaseUrl;
+            << "rtmpPlay=" << rtmpPlayBaseUrl
+            << "aiEnabled=" << aiAssistantEnabled
+            << "aiService=" << aiServiceBaseUrl
+            << "aiTimeoutMs=" << aiTimeoutMs;
 }
 
 QString MainWindow::buildRtmpPublishUrl(const QString &stream) const
@@ -2123,7 +2150,7 @@ void MainWindow::on_startReceiveButton_clicked()
 void MainWindow::setupSignalUi()
 {
     if (roomDock && roomUserList && roomEventLog && signalStateLabel && roomCountLabel &&
-        chatMessageLog && chatInputEdit && sendChatButton) return;
+        chatMessageLog && chatInputEdit && sendChatButton && askAiButton) return;
 
     // 优先使用 UI(XML) 中已有控件。
     roomDock = findChild<QDockWidget*>("roomDock");
@@ -2134,6 +2161,7 @@ void MainWindow::setupSignalUi()
     chatMessageLog=findChild<QPlainTextEdit*>("chatMessageLog");
     chatInputEdit=findChild<QTextEdit*>("chatInputEdit");
     sendChatButton=findChild<QPushButton*>("sendChatButton");
+    askAiButton=findChild<QPushButton*>("askAiButton");
     whiteboardCanvasLabel=findChild<QLabel*>("whiteboardCanvasLabel");
     whiteboardClearButton=findChild<QPushButton*>("whiteboardClearButton");
     whiteboardPenButton=findChild<QToolButton*>("whiteboardPenButton");
@@ -2230,7 +2258,7 @@ void MainWindow::setupSignalUi()
     if (!chatMessageLog) {
         chatMessageLog = roomEventLog;
     }
-    if (!chatInputEdit || !sendChatButton) {
+    if (!chatInputEdit || !sendChatButton || !askAiButton) {
         QWidget *chatTab = findChild<QWidget*>("chatTab");
         auto *chatLayout = chatTab ? qobject_cast<QVBoxLayout*>(chatTab->layout()) : nullptr;
         if (!chatLayout) {
@@ -2245,15 +2273,20 @@ void MainWindow::setupSignalUi()
 
             chatInputEdit = new QTextEdit(parentWidget);
             chatInputEdit->setObjectName("chatInputEdit");
-            chatInputEdit->setPlaceholderText(QStringLiteral("输入消息，Enter发送，Shift+Enter换行"));
+            chatInputEdit->setPlaceholderText(QStringLiteral("输入消息，Enter发送，Shift+Enter换行，@AI 提问助手"));
             chatInputEdit->setAcceptRichText(false);
             chatInputEdit->setFixedHeight(56);
+
+            askAiButton = new QPushButton(aiAssistantName, parentWidget);
+            askAiButton->setObjectName("askAiButton");
+            askAiButton->setMinimumWidth(72);
 
             sendChatButton = new QPushButton(QStringLiteral("发送"), parentWidget);
             sendChatButton->setObjectName("sendChatButton");
             sendChatButton->setMinimumWidth(56);
 
             chatRow->addWidget(chatInputEdit, 1);
+            chatRow->addWidget(askAiButton, 0);
             chatRow->addWidget(sendChatButton, 0);
 
             chatLayout->addLayout(chatRow);
@@ -2262,10 +2295,15 @@ void MainWindow::setupSignalUi()
     if (sendChatButton) {
         connect(sendChatButton, &QPushButton::clicked, this, &MainWindow::onSendChatClicked, Qt::UniqueConnection);
     }
+    if (askAiButton) {
+        connect(askAiButton, &QPushButton::clicked, this, &MainWindow::onAskAiClicked, Qt::UniqueConnection);
+    }
     if (chatInputEdit) {
         chatInputEdit->setAcceptRichText(false);
         chatInputEdit->installEventFilter(this);
+        chatInputEdit->setPlaceholderText(QStringLiteral("输入消息，Enter发送，Shift+Enter换行，@AI 提问助手"));
     }
+    updateAiAssistantUi();
 
 
     connect(roomUserList, &QListWidget::itemDoubleClicked, this, &MainWindow::onRoomUserDoubleClicked, Qt::UniqueConnection);
@@ -3264,6 +3302,44 @@ void MainWindow::appendChatMessage(const QString &fromStream, const QString &con
     qInfo()<<"[chat]"<<line;
 }
 
+QString MainWindow::extractAiPrompt(const QString &content) const
+{
+    QString prompt = content.trimmed();
+    if (prompt.startsWith("@AI", Qt::CaseInsensitive)) {
+        prompt.remove(0, 3);
+        prompt = prompt.trimmed();
+        if (prompt.startsWith(':') || prompt.startsWith(QChar(0xFF1A))) {
+            prompt.remove(0, 1);
+            prompt = prompt.trimmed();
+        }
+    }
+    return prompt;
+}
+
+void MainWindow::updateAiAssistantUi()
+{
+    if (!askAiButton) return;
+    askAiButton->setText(aiAssistantName);
+    askAiButton->setEnabled(aiAssistantEnabled);
+    const QString tooltip = aiAssistantEnabled
+                                ? QStringLiteral("打开本地 AI 助手窗口，不广播到房间")
+                                : QStringLiteral("AI 助手未启用，请检查 smartmeet.ini 的 [ai] 配置");
+    askAiButton->setToolTip(tooltip);
+}
+
+void MainWindow::showAiAssistantDialog(const QString &prompt, bool autoSubmit)
+{
+    if (!aiAssistantDialog) {
+        aiAssistantDialog = new AiAssistantDialog(this);
+    }
+    aiAssistantDialog->configureAssistant(aiAssistantEnabled, aiServiceBaseUrl, aiAssistantName, aiTimeoutMs);
+    aiAssistantDialog->setSessionContext(activeDeployProfile,
+                                         roomId,
+                                         loginUser.isEmpty() ? userId : loginUser,
+                                         selfStream);
+    aiAssistantDialog->openWithPrompt(prompt, autoSubmit);
+}
+
 // 信令连接成功后的登录/状态同步入口
 void MainWindow::onSignalConnected()
 {
@@ -3782,10 +3858,36 @@ void MainWindow::onRoomListContextMenu(const QPoint &pos)
     }
 }
 
+void MainWindow::onAskAiClicked()
+{
+    QString prompt;
+    if (chatInputEdit) {
+        prompt = extractAiPrompt(chatInputEdit->toPlainText());
+        if (!prompt.isEmpty()) {
+            chatInputEdit->clear();
+        }
+    }
+    showAiAssistantDialog(prompt, false);
+}
+
 // 发送聊天输入框内容
 void MainWindow::onSendChatClicked()
 {
     if(!chatInputEdit) return;
+
+    QString content=chatInputEdit->toPlainText().trimmed();
+    if(content.isEmpty()) return;
+
+    if (content.startsWith("@AI", Qt::CaseInsensitive)) {
+        const QString prompt = extractAiPrompt(content);
+        if (prompt.isEmpty()) {
+            appendRoomEvent("AI 提问不能为空");
+            return;
+        }
+        chatInputEdit->clear();
+        showAiAssistantDialog(prompt, true);
+        return;
+    }
 
     if(!signalConnected||!signalSocket||signalSocket->state()!=QAbstractSocket::ConnectedState){
         appendRoomEvent("信令未连接,无法发送聊天消息");
@@ -3793,9 +3895,6 @@ void MainWindow::onSendChatClicked()
     }
 
     if(!ensureRoomIdentity(false)) return;
-
-    QString content=chatInputEdit->toPlainText().trimmed();
-    if(content.isEmpty()) return;
 
     //先做硬限制,避免超长消息刷屏
     if(content.size()>500){

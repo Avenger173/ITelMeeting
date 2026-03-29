@@ -72,6 +72,8 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+class AiAssistantDialog;
+
 // =========================================================
 // MainWindow：项目总控类
 // 负责 UI 编排、会议生命周期、信令、推拉流、白板、登录等
@@ -110,6 +112,7 @@ private slots:
     void onRoomUserDoubleClicked(QListWidgetItem *item); // 双击成员聚焦
     void onRoomListContextMenu(const QPoint &pos);       // 右键管理菜单
     void onSendChatClicked();                            // 发送聊天消息
+    void onAskAiClicked();                               // 发送 AI 助手请求
 
     void applyResponsiveLayout();                       // 根据窗口宽度调整紧凑布局
     bool isCompactMeetingLayout() const;
@@ -167,6 +170,9 @@ private:
 
     // 追加聊天消息到聊天窗口（含去重与时间戳展示）
     void appendChatMessage(const QString &fromStream, const QString &content, qint64 tsMs, bool isSelf, const QString &msgId = QString());
+    QString extractAiPrompt(const QString &content) const;                      // 从输入中提取 AI 提问正文
+    void updateAiAssistantUi();                                                 // 刷新 AI 按钮状态
+    void showAiAssistantDialog(const QString &prompt = QString(), bool autoSubmit = false); // 打开 AI 助手小窗
 
     // ===== 远端宫格/焦点渲染相关 =====
     void setupRemoteGridUi();                                 // 初始化远端宫格 UI
@@ -323,6 +329,10 @@ private:
     QString signalUrl = "ws://8.134.203.85:9001"; // 信令服务地址
     QString rtmpPublishBaseUrl = "rtmp://8.134.203.85/live"; // RTMP推流基地址
     QString rtmpPlayBaseUrl = "rtmp://8.134.203.85/live";    // RTMP拉流基地址
+    bool aiAssistantEnabled = true;                            // 是否启用本地 AI 助手
+    QString aiServiceBaseUrl = "http://127.0.0.1:18080";     // AI 服务基地址
+    int aiTimeoutMs = 600000;                                  // AI 请求超时
+    QString aiAssistantName = QStringLiteral("AI助手");       // AI 助手显示名
     QString activeDeployProfile = "cloud";                   // 当前部署配置名
     QString appConfigPath;                                    // 实际加载的配置文件路径
     QTimer *signalReconnectTimer = nullptr; // 重连计时器
@@ -357,8 +367,10 @@ private:
     QPlainTextEdit *chatMessageLog = nullptr;    // 聊天消息显示框
     QTextEdit *chatInputEdit = nullptr;          // 聊天输入框
     QPushButton *sendChatButton = nullptr;       // 聊天发送按钮
+    QPushButton *askAiButton = nullptr;          // AI 助手按钮
     QSet<QString> seenChatMsgIds;                // 已显示聊天消息 ID（去重）
     quint64 chatLocalSeq = 0;                    // 本地聊天自增序号
+    AiAssistantDialog *aiAssistantDialog = nullptr; // AI 助手弹窗
     QAction *selfMicToggleAction = nullptr;      // “静音我自己”菜单动作
     QAction *selfCamToggleAction = nullptr;      // “关闭我的摄像头”菜单动作
     QAction *selfShareToggleAction = nullptr;    // “开始/停止共享”菜单动作

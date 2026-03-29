@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AiAssistantDialog</class>
+ <widget class="QDialog" name="AiAssistantDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>700</width>
+    <height>713</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>AI助手</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">QDialog {
+    background: #0b1220;
+}
+QLabel {
+    color: #d8e1ef;
+}
+QComboBox, QTextEdit, QPlainTextEdit {
+    background: #111a2b;
+    color: #edf2fb;
+    border: 1px solid #31425e;
+    border-radius: 10px;
+    padding: 8px;
+    selection-background-color: #375a9e;
+}
+QTextEdit:disabled, QPlainTextEdit:disabled {
+    color: #aab7cb;
+}
+QComboBox {
+    min-height: 34px;
+    padding: 6px 12px;
+    padding-right: 30px;
+}
+QComboBox::drop-down {
+    width: 28px;
+    border: none;
+    background: #1a2740;
+    border-top-right-radius: 10px;
+    border-bottom-right-radius: 10px;
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+}
+QComboBox::down-arrow {
+    image: url(:/assets/icons/chevron_down_light.svg);
+    width: 12px;
+    height: 8px;
+}
+QPushButton {
+    min-height: 34px;
+    border-radius: 10px;
+    border: 1px solid #395178;
+    background: #16233a;
+    color: #edf2fb;
+    padding: 0 14px;
+}
+QPushButton:hover {
+    background: #1d2d49;
+}
+QPushButton:pressed {
+    background: #25395b;
+}
+QPushButton#sendButton {
+    background: #2e7cf6;
+    border: 1px solid #4d93ff;
+    color: white;
+    font-weight: 600;
+}
+QPushButton#sendButton:hover {
+    background: #3b88ff;
+}
+QScrollBar:vertical {
+    background: #0c1320;
+    width: 12px;
+    margin: 2px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical {
+    background: #5f7599;
+    min-height: 32px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #7f98c0;
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+QScrollBar:horizontal {
+    background: #0c1320;
+    height: 12px;
+    margin: 2px;
+    border-radius: 6px;
+}
+QScrollBar::handle:horizontal {
+    background: #5f7599;
+    min-width: 32px;
+    border-radius: 6px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #7f98c0;
+}
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: transparent;
+}</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>10</number>
+   </property>
+   <property name="leftMargin">
+    <number>14</number>
+   </property>
+   <property name="topMargin">
+    <number>14</number>
+   </property>
+   <property name="rightMargin">
+    <number>14</number>
+   </property>
+   <property name="bottomMargin">
+    <number>14</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="headerFrame">
+     <property name="styleSheet">
+      <string notr="true">QFrame#headerFrame {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #14233b, stop:1 #0f1728);
+    border: 1px solid #2f4569;
+    border-radius: 14px;
+}
+QLabel#titleLabel {
+    color: #f4f7ff;
+    font-size: 20px;
+    font-weight: 700;
+}
+QLabel#subtitleLabel {
+    color: #93a7c4;
+    font-size: 12px;
+}</string>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <layout class="QVBoxLayout" name="headerLayout">
+      <property name="spacing">
+       <number>4</number>
+      </property>
+      <property name="leftMargin">
+       <number>14</number>
+      </property>
+      <property name="topMargin">
+       <number>14</number>
+      </property>
+      <property name="rightMargin">
+       <number>14</number>
+      </property>
+      <property name="bottomMargin">
+       <number>14</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="titleLabel">
+        <property name="text">
+         <string>AI助手</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="subtitleLabel">
+        <property name="text">
+         <string>本地独立问答窗口，不会把你的提问广播给房间其他成员。</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="modeLayout">
+     <property name="spacing">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="modeLabel">
+       <property name="text">
+        <string>助手模式</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="modeComboBox">
+       <property name="minimumSize">
+        <size>
+         <width>140</width>
+         <height>48</height>
+        </size>
+       </property>
+       <item>
+        <property name="text">
+         <string>通用助手</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>项目助手</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item>
+      <spacer name="modeSpacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="assistantHintLabel">
+     <property name="styleSheet">
+      <string notr="true">color:#c5d2e7;background:#111927;border:1px solid #2d3f5d;border-radius:10px;padding:10px 12px;</string>
+     </property>
+     <property name="text">
+      <string>通用助手：普通问题也可以直接问。</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="historyLabel">
+     <property name="styleSheet">
+      <string notr="true">color:#90a3c1;font-size:12px;font-weight:600;padding-left:2px;</string>
+     </property>
+     <property name="text">
+      <string>问答记录</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="historyPlainTextEdit">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>300</height>
+      </size>
+     </property>
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+     <property name="maximumBlockCount">
+      <number>1000</number>
+     </property>
+     <property name="placeholderText">
+      <string>这里会显示你的提问、AI 的回答，以及等待中的“思考中…”提示。</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="promptLabel">
+     <property name="styleSheet">
+      <string notr="true">color:#90a3c1;font-size:12px;font-weight:600;padding-left:2px;</string>
+     </property>
+     <property name="text">
+      <string>提问输入</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="promptTextEdit">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>82</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>118</height>
+      </size>
+     </property>
+     <property name="acceptRichText">
+      <bool>false</bool>
+     </property>
+     <property name="placeholderText">
+      <string>在这里提问。Enter 发送，Shift+Enter 换行。</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="bottomLayout">
+     <property name="spacing">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="statusLabel">
+       <property name="styleSheet">
+        <string notr="true">color:#9bb0cf;</string>
+       </property>
+       <property name="text">
+        <string>状态：就绪</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="clearButton">
+       <property name="text">
+        <string>清空记录</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="sendButton">
+       <property name="minimumSize">
+        <size>
+         <width>110</width>
+         <height>36</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>发送提问</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
