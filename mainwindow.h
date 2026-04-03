@@ -73,6 +73,7 @@ class MainWindow;
 QT_END_NAMESPACE
 
 class AiAssistantDialog;
+class AiSegmentationClient;
 
 // =========================================================
 // MainWindow：项目总控类
@@ -206,7 +207,12 @@ private:
     // ===== 本地视频源与美颜 =====
     void applyLocalVideoSource();                            // 应用摄像头/共享源切换
     void applyBeautyToWorker();                              // 同步美颜参数到采集线程
+    void applyAiVirtualBackgroundToWorker();                 // 同步 A2 虚拟背景参数到采集线程
     void setBeautyMode(const QString &modeName, int level);  // 设置美颜模式与强度
+    void setAiVirtualBackgroundMode(const QString &modeName); // 设置 A2 虚拟背景模式
+    void setAiVirtualBackgroundColor(const QColor &color, const QString &displayName); // 设置 A2 纯色背景
+    void chooseAiVirtualBackgroundImage();                   // 选择 A2 图片背景
+    void saveAiVirtualBackgroundPrefs() const;               // 持久化 A2 虚拟背景配置
 
     // ===== 白板相关 =====
     void setupWhiteboardUi();                     // 初始化白板控件
@@ -326,13 +332,23 @@ private:
     // ===== 信令连接状态 =====
     QWebSocket *signalSocket = nullptr; // WebSocket 客户端
     bool signalConnected = false;       // 当前是否连接成功
-    QString signalUrl = "ws://8.134.203.85:9001"; // 信令服务地址
-    QString rtmpPublishBaseUrl = "rtmp://8.134.203.85/live"; // RTMP推流基地址
-    QString rtmpPlayBaseUrl = "rtmp://8.134.203.85/live";    // RTMP拉流基地址
+    QString signalUrl = "ws://8.166.132.119:9001"; // 信令服务地址
+    QString rtmpPublishBaseUrl = "rtmp://8.166.132.119/live"; // RTMP推流基地址
+    QString rtmpPlayBaseUrl = "rtmp://8.166.132.119/live";    // RTMP拉流基地址
     bool aiAssistantEnabled = true;                            // 是否启用本地 AI 助手
     QString aiServiceBaseUrl = "http://127.0.0.1:18080";     // AI 服务基地址
     int aiTimeoutMs = 600000;                                  // AI 请求超时
     QString aiAssistantName = QStringLiteral("AI助手");       // AI 助手显示名
+    AiSegmentationClient *aiSegmentationClient = nullptr;     // A2 分割客户端（P2，不接主链）
+    bool aiVirtualBackgroundEnabled = false;                  // A2 虚拟背景总开关
+    QString aiVirtualBackgroundMode = QStringLiteral("off");  // A2 模式：off/blur
+    QColor aiVirtualBackgroundColor = QColor(QStringLiteral("#ddebff")); // A2 纯色背景颜色
+    QString aiVirtualBackgroundImagePath;                     // A2 图片背景路径
+    QImage aiVirtualBackgroundImage;                          // A2 图片背景缓存
+    int aiVirtualBackgroundBlurStrength = 45;                 // 背景虚化强度
+    int aiSegmentationRequestInterval = 4;                    // 每 N 帧请求一次分割
+    int aiSegmentationTimeoutMs = 1500;                       // 分割请求超时
+    int aiSegmentationMaxInputSide = 512;                     // 分割请求最大输入边长
     QString activeDeployProfile = "cloud";                   // 当前部署配置名
     QString appConfigPath;                                    // 实际加载的配置文件路径
     QTimer *signalReconnectTimer = nullptr; // 重连计时器
@@ -374,6 +390,12 @@ private:
     QAction *selfMicToggleAction = nullptr;      // “静音我自己”菜单动作
     QAction *selfCamToggleAction = nullptr;      // “关闭我的摄像头”菜单动作
     QAction *selfShareToggleAction = nullptr;    // “开始/停止共享”菜单动作
+    QAction *virtualBgOffAction = nullptr;       // “虚拟背景-关闭”
+    QAction *virtualBgBlurAction = nullptr;      // “虚拟背景-背景虚化”
+    QAction *virtualBgColorMintAction = nullptr; // “虚拟背景-纯色-薄荷绿”
+    QAction *virtualBgColorSkyAction = nullptr;  // “虚拟背景-纯色-浅天蓝”
+    QAction *virtualBgColorCreamAction = nullptr; // “虚拟背景-纯色-暖米白”
+    QAction *virtualBgImageAction = nullptr;     // “虚拟背景-图片背景”
 
     // 宫格单卡片数据结构
     struct RemoteTile {

@@ -1,20 +1,33 @@
 from __future__ import annotations
 
+import base64
 import configparser
+import io
 import logging
+import math
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI
+import numpy as np
+from fastapi import FastAPI, HTTPException
+from PIL import Image
 from pydantic import BaseModel, Field
+
+try:
+    import onnxruntime as ort
+except Exception:  # noqa: BLE001
+    ort = None
 
 
 logger = logging.getLogger("smartmeet-ai")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+PIL_BILINEAR = Image.Resampling.BILINEAR if hasattr(Image, "Resampling") else Image.BILINEAR
 
 
 @dataclass
@@ -29,6 +42,15 @@ class ServiceConfig:
     llm_timeout_ms: int = 600000
     llm_temperature: float = 0.5
     llm_max_tokens: int = 1200
+    segment_enabled: bool = False
+    segment_backend: str = "onnxruntime"
+    segment_model_path: str = "models/portrait_segmentation.onnx"
+    segment_input_width: int = 256
+    segment_input_height: int = 256
+    segment_threshold: float = 0.5
+    segment_output_is_logits: bool = True
+    segment_input_name: str = ""
+    segment_output_name: str = ""
 
 
 def _resolve_config_path() -> Path:
@@ -43,6 +65,28 @@ def _resolve_project_facts_path() -> Path:
     if env_path:
         return Path(env_path).expanduser().resolve()
     return (Path(__file__).resolve().parent / "project_facts.md").resolve()
+
+
+def _service_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def _resolve_segment_model_path(raw_path: str) -> str:
+    text = (raw_path or "").strip()
+    if not text:
+        return str((_service_root() / "models" / "portrait_segmentation.onnx").resolve())
+
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        path = (_service_root() / path).resolve()
+    return str(path)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _load_config() -> ServiceConfig:
@@ -62,12 +106,28 @@ def _load_config() -> ServiceConfig:
         llm_timeout_ms=max(1000, parser.getint("llm", "timeout_ms", fallback=600000)),
         llm_temperature=parser.getfloat("llm", "temperature", fallback=0.5),
         llm_max_tokens=max(64, parser.getint("llm", "max_tokens", fallback=1200)),
+        segment_enabled=parser.getboolean("segment", "enabled", fallback=False),
+        segment_backend=parser.get("segment", "backend", fallback="onnxruntime").strip().lower() or "onnxruntime",
+        segment_model_path=_resolve_segment_model_path(
+            parser.get("segment", "model_path", fallback="models/portrait_segmentation.onnx").strip()
+        ),
+        segment_input_width=max(64, parser.getint("segment", "input_width", fallback=256)),
+        segment_input_height=max(64, parser.getint("segment", "input_height", fallback=256)),
+        segment_threshold=min(0.99, max(0.01, parser.getfloat("segment", "threshold", fallback=0.5))),
+        segment_output_is_logits=parser.getboolean("segment", "output_is_logits", fallback=True),
+        segment_input_name=parser.get("segment", "input_name", fallback="").strip(),
+        segment_output_name=parser.get("segment", "output_name", fallback="").strip(),
     )
 
     env_api_key = os.getenv("SMARTMEET_LLM_API_KEY", "").strip()
     env_base_url = os.getenv("SMARTMEET_LLM_BASE_URL", "").strip()
     env_model = os.getenv("SMARTMEET_LLM_MODEL", "").strip()
     env_mode = os.getenv("SMARTMEET_AI_PROVIDER_MODE", "").strip().lower()
+    env_segment_model = os.getenv("SMARTMEET_SEGMENT_MODEL", "").strip()
+    env_segment_enabled = _env_bool("SMARTMEET_SEGMENT_ENABLED", cfg.segment_enabled)
+    env_segment_w = os.getenv("SMARTMEET_SEGMENT_INPUT_WIDTH", "").strip()
+    env_segment_h = os.getenv("SMARTMEET_SEGMENT_INPUT_HEIGHT", "").strip()
+    env_segment_threshold = os.getenv("SMARTMEET_SEGMENT_THRESHOLD", "").strip()
 
     if env_api_key:
         cfg.llm_api_key = env_api_key
@@ -78,14 +138,29 @@ def _load_config() -> ServiceConfig:
     if env_mode:
         cfg.provider_mode = env_mode
 
+    cfg.segment_enabled = env_segment_enabled
+    if env_segment_model:
+        cfg.segment_model_path = _resolve_segment_model_path(env_segment_model)
+    if env_segment_w.isdigit():
+        cfg.segment_input_width = max(64, int(env_segment_w))
+    if env_segment_h.isdigit():
+        cfg.segment_input_height = max(64, int(env_segment_h))
+    if env_segment_threshold:
+        try:
+            cfg.segment_threshold = min(0.99, max(0.01, float(env_segment_threshold)))
+        except ValueError:
+            logger.warning("invalid SMARTMEET_SEGMENT_THRESHOLD=%s", env_segment_threshold)
+
     logger.info(
-        '[Config] path="%s" assistant="%s" mode="%s" llm_enabled=%s base="%s" model="%s"',
+        '[Config] path="%s" assistant="%s" mode="%s" llm_enabled=%s base="%s" model="%s" segment_enabled=%s segment_model="%s"',
         path,
         cfg.assistant_name,
         cfg.provider_mode,
         cfg.llm_enabled,
         cfg.llm_base_url,
         cfg.llm_model or "<empty>",
+        cfg.segment_enabled,
+        cfg.segment_model_path,
     )
     return cfg
 
@@ -118,10 +193,124 @@ def _load_project_facts() -> str:
 
 PROJECT_FACTS = _load_project_facts()
 
+
+class OnnxPortraitSegmenter:
+    def __init__(self, cfg: ServiceConfig) -> None:
+        self._cfg = cfg
+        self._session = None
+        self._lock = threading.Lock()
+        self.ready = False
+        self.note = "disabled"
+        self.backend = cfg.segment_backend
+        self.model_name = Path(cfg.segment_model_path).name or "<empty>"
+        self.input_name = cfg.segment_input_name
+        self.output_name = cfg.segment_output_name
+
+        if not cfg.segment_enabled:
+            return
+
+        if cfg.segment_backend != "onnxruntime":
+            self.note = f"unsupported_backend:{cfg.segment_backend}"
+            return
+
+        if ort is None:
+            self.note = "onnxruntime_missing"
+            return
+
+        model_path = Path(cfg.segment_model_path)
+        if not model_path.exists():
+            self.note = f"model_not_found:{model_path}"
+            return
+
+        try:
+            session_options = ort.SessionOptions()
+            session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            self._session = ort.InferenceSession(
+                str(model_path),
+                sess_options=session_options,
+                providers=["CPUExecutionProvider"],
+            )
+
+            if not self.input_name:
+                self.input_name = self._session.get_inputs()[0].name
+            if not self.output_name:
+                self.output_name = self._session.get_outputs()[0].name
+
+            self.ready = True
+            self.note = "ready"
+            logger.info(
+                '[Segment] ONNX ready model="%s" input="%s" output="%s" size=%dx%d',
+                model_path,
+                self.input_name,
+                self.output_name,
+                cfg.segment_input_width,
+                cfg.segment_input_height,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.note = f"load_failed:{type(exc).__name__}"
+            logger.warning("segment model load failed: %s", exc)
+
+    def _extract_mask(self, output: np.ndarray) -> np.ndarray:
+        mask = np.asarray(output, dtype=np.float32)
+
+        if mask.ndim == 4 and mask.shape[0] == 1:
+            mask = mask[0]
+        if mask.ndim == 3:
+            if mask.shape[0] == 1:
+                mask = mask[0]
+            elif mask.shape[0] == 2:
+                mask = mask[1]
+            else:
+                mask = mask[0]
+
+        if mask.ndim != 2:
+            raise ValueError(f"unsupported mask shape: {tuple(mask.shape)}")
+        return mask
+
+    def _normalize_mask(self, mask: np.ndarray) -> np.ndarray:
+        if self._cfg.segment_output_is_logits or mask.min() < 0.0 or mask.max() > 1.0:
+            mask = np.clip(mask, -20.0, 20.0)
+            mask = 1.0 / (1.0 + np.exp(-mask))
+        return np.clip(mask, 0.0, 1.0)
+
+    def segment_image(self, image: Image.Image, threshold: float, return_soft_mask: bool) -> tuple[bytes, int, int, float]:
+        if not self.ready or self._session is None:
+            raise RuntimeError(self.note)
+
+        rgb = image.convert("RGB")
+        orig_w, orig_h = rgb.size
+
+        resized = rgb.resize((self._cfg.segment_input_width, self._cfg.segment_input_height), PIL_BILINEAR)
+        arr = np.asarray(resized, dtype=np.float32) / 255.0
+        arr = np.transpose(arr, (2, 0, 1))[None, ...]
+
+        start = time.perf_counter()
+        with self._lock:
+            outputs = self._session.run([self.output_name], {self.input_name: arr})
+        _ = int((time.perf_counter() - start) * 1000)
+
+        mask = self._extract_mask(outputs[0])
+        mask = self._normalize_mask(mask)
+
+        fg_ratio = float((mask >= threshold).mean())
+
+        if return_soft_mask:
+            mask_u8 = np.clip(mask * 255.0, 0.0, 255.0).astype(np.uint8)
+        else:
+            mask_u8 = np.where(mask >= threshold, 255, 0).astype(np.uint8)
+
+        mask_img = Image.fromarray(mask_u8, mode="L").resize((orig_w, orig_h), PIL_BILINEAR)
+        buffer = io.BytesIO()
+        mask_img.save(buffer, format="PNG")
+        return buffer.getvalue(), orig_w, orig_h, fg_ratio
+
+
+SEGMENTER = OnnxPortraitSegmenter(CONFIG)
+
 app = FastAPI(
     title="SmartMeet AI Service",
-    version="0.4.0",
-    description="SmartMeet 本地 AI 助手服务",
+    version="0.5.0",
+    description="SmartMeet 本地 AI 助手与人像分割服务",
 )
 
 
@@ -141,6 +330,26 @@ class AssistantResponse(BaseModel):
     provider: str = "local"
     model: str = "rule-based-v1"
     latency_ms: int
+    note: Optional[str] = None
+
+
+class SegmentRequest(BaseModel):
+    image_base64: str = Field(..., min_length=16)
+    request_id: Optional[str] = None
+    threshold: Optional[float] = Field(default=None, ge=0.01, le=0.99)
+    return_soft_mask: bool = True
+
+
+class SegmentResponse(BaseModel):
+    ok: bool = True
+    backend: str = "onnxruntime"
+    model: str
+    request_id: Optional[str] = None
+    width: int
+    height: int
+    mask_png_base64: str
+    latency_ms: int
+    foreground_ratio: float
     note: Optional[str] = None
 
 
@@ -262,6 +471,26 @@ def _llm_ready(cfg: ServiceConfig) -> bool:
     )
 
 
+def _sigmoid(x: float) -> float:
+    clipped = min(20.0, max(-20.0, x))
+    return 1.0 / (1.0 + math.exp(-clipped))
+
+
+def _decode_image_from_base64(data: str) -> Image.Image:
+    text = data.strip()
+    if text.startswith("data:") and "," in text:
+        text = text.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(text, validate=False)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("invalid_base64_image") from exc
+
+    try:
+        return Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("invalid_image_bytes") from exc
+
+
 async def _call_openai_compatible(req: AssistantRequest, cfg: ServiceConfig) -> AssistantResponse:
     base_url = cfg.llm_base_url.rstrip("/")
     url = f"{base_url}/chat/completions"
@@ -331,6 +560,12 @@ def healthz() -> dict:
         "provider_mode": CONFIG.provider_mode,
         "llm_ready": _llm_ready(CONFIG),
         "llm_model": CONFIG.llm_model or "rule-based-v1",
+        "segment_ready": SEGMENTER.ready,
+        "segment_backend": CONFIG.segment_backend,
+        "segment_model": SEGMENTER.model_name,
+        "segment_input_width": CONFIG.segment_input_width,
+        "segment_input_height": CONFIG.segment_input_height,
+        "segment_note": SEGMENTER.note,
     }
 
 
@@ -356,3 +591,41 @@ async def assistant(req: AssistantRequest) -> AssistantResponse:
         if not CONFIG.fallback_to_local:
             raise
         return _fallback_response(req, start, note=f"fallback:{type(exc).__name__}")
+
+
+@app.post("/segment", response_model=SegmentResponse)
+async def segment(req: SegmentRequest) -> SegmentResponse:
+    start = time.perf_counter()
+
+    if not SEGMENTER.ready:
+        raise HTTPException(status_code=503, detail=f"segment_not_ready:{SEGMENTER.note}")
+
+    threshold = req.threshold if req.threshold is not None else CONFIG.segment_threshold
+
+    try:
+        image = _decode_image_from_base64(req.image_base64)
+        mask_png, width, height, foreground_ratio = SEGMENTER.segment_image(
+            image=image,
+            threshold=threshold,
+            return_soft_mask=req.return_soft_mask,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("segment request failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"segment_failed:{type(exc).__name__}") from exc
+
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    return SegmentResponse(
+        backend=CONFIG.segment_backend,
+        model=SEGMENTER.model_name,
+        request_id=req.request_id,
+        width=width,
+        height=height,
+        mask_png_base64=base64.b64encode(mask_png).decode("ascii"),
+        latency_ms=latency_ms,
+        foreground_ratio=foreground_ratio,
+        note="soft_mask" if req.return_soft_mask else "binary_mask",
+    )

@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QThread>
 #include <QImage>
+#include <QColor>
 #include <QMutex>
 #include <QTimer>
 #include <atomic>
@@ -28,6 +29,7 @@ public:
 signals:
     // 发送 RGB888 图像帧
     void frameCaptured(const QImage &frame);
+    void segmentationFrameReady(const QImage &frame);
 
 public slots:
     void captureLoop();
@@ -38,6 +40,14 @@ public slots:
     void setBeautyEnabled(bool on);
     void setBeautyLevel(int level); // 0~100
     void setBeautyStyle(int style); // 0关 1自然 2清晰 3柔和 4磨皮 5瘦脸 6祛皱
+    void setVirtualBackgroundEnabled(bool on);
+    void setVirtualBackgroundMode(const QString &mode); // off/blur/color
+    void setVirtualBackgroundColor(const QColor &color); // 纯色背景颜色
+    void setVirtualBackgroundImage(const QImage &image); // 图片背景
+    void setVirtualBackgroundBlurStrength(int level); // 0~100
+    void setVirtualBackgroundRequestInterval(int interval); // 每 N 帧请求一次分割
+    void updateVirtualBackgroundMask(const QImage &mask);
+    void clearVirtualBackgroundMask();
 
 private:
     bool ensureFaceCascadeLoaded(); //确保人脸检测的级联分类器（CascadeClassifier）已加载
@@ -60,6 +70,14 @@ private:
     bool beautyEnabled = false;
     int beautyLevel = 0;
     int beautyStyle = 0;
+    bool virtualBackgroundEnabled = false;
+    QString virtualBackgroundMode = QStringLiteral("off");
+    QColor virtualBackgroundColor = QColor(QStringLiteral("#ddebff"));
+    QImage virtualBackgroundImage;
+    int virtualBackgroundBlurStrength = 45;
+    int virtualBackgroundRequestInterval = 4;
+    int segmentationRequestTick = 0;
+    QImage latestVirtualBackgroundMask;
 
     cv::CascadeClassifier faceCascade;  //OpenCV 的级联分类器，用于人脸检测（加载 Haar/LBP 分类器模型）。
     bool faceCascadeTried = false;  //标记是否已经尝试加载人脸分类器

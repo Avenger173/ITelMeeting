@@ -20,6 +20,162 @@ static cv::Rect clipRect(const cv::Rect &r, const cv::Size &s)
     return r & cv::Rect(0, 0, s.width, s.height);
 }
 
+static bool bgrMatToRgbImage(const cv::Mat &frame, QImage *out)
+{
+    if (!out || frame.empty() || frame.type() != CV_8UC3) return false;
+
+    QImage img(frame.cols, frame.rows, QImage::Format_RGB888);
+    if (img.isNull()) return false;
+
+    for (int y = 0; y < frame.rows; ++y) {
+        const uchar *src = frame.ptr<uchar>(y);
+        uchar *dst = img.scanLine(y);
+        for (int x = 0; x < frame.cols; ++x) {
+            dst[3 * x + 0] = src[3 * x + 2];
+            dst[3 * x + 1] = src[3 * x + 1];
+            dst[3 * x + 2] = src[3 * x + 0];
+        }
+    }
+
+    *out = img;
+    return true;
+}
+
+static bool buildVirtualBackgroundSoftMask(const cv::Size &frameSize, const QImage &maskImage, cv::Mat *mask3Out)
+{
+    if (!mask3Out || frameSize.width <= 0 || frameSize.height <= 0 || maskImage.isNull()) return false;
+
+    QImage grayMask = maskImage.convertToFormat(QImage::Format_Grayscale8);
+    if (grayMask.isNull()) return false;
+
+    cv::Mat mask(grayMask.height(),
+                 grayMask.width(),
+                 CV_8UC1,
+                 const_cast<uchar *>(grayMask.constBits()),
+                 grayMask.bytesPerLine());
+
+    cv::Mat resizedMask;
+    cv::Mat maskView = mask;
+    if (maskView.size() != frameSize) {
+        cv::resize(maskView, resizedMask, frameSize, 0, 0, cv::INTER_LINEAR);
+        maskView = resizedMask;
+    }
+
+    cv::Mat maskFloat;
+    maskView.convertTo(maskFloat, CV_32FC1, 1.0 / 255.0);
+    cv::GaussianBlur(maskFloat, maskFloat, cv::Size(0, 0), 2.2);
+    cv::pow(maskFloat, 0.75, maskFloat);
+
+    cv::Mat mask3;
+    std::vector<cv::Mat> channels(3, maskFloat);
+    cv::merge(channels, mask3);
+    *mask3Out = mask3;
+    return true;
+}
+
+static void applyVirtualBackgroundBlur(cv::Mat &frame, const QImage &maskImage, int strength)
+{
+    if (frame.empty() || maskImage.isNull() || frame.type() != CV_8UC3) return;
+
+    const double t = std::clamp(strength / 100.0, 0.0, 1.0);
+    if (t <= 0.0) return;
+
+    cv::Mat mask3;
+    if (!buildVirtualBackgroundSoftMask(frame.size(), maskImage, &mask3)) return;
+
+    cv::Mat blurred;
+    // 性能优化：先对低分辨率帧做模糊，再放大回原尺寸。
+    // 对虚拟背景来说，背景本身不需要保留高频细节，这样可以显著降低 CPU 占用。
+    const double blurScale = std::clamp(0.58 - 0.28 * t, 0.28, 0.58);
+    const int blurW = std::max(1, static_cast<int>(std::lround(frame.cols * blurScale)));
+    const int blurH = std::max(1, static_cast<int>(std::lround(frame.rows * blurScale)));
+    if (blurW < frame.cols || blurH < frame.rows) {
+        cv::Mat small;
+        cv::resize(frame, small, cv::Size(blurW, blurH), 0, 0, cv::INTER_LINEAR);
+        const double sigma = 1.8 + 5.2 * t;
+        cv::GaussianBlur(small, small, cv::Size(0, 0), sigma, sigma);
+        cv::resize(small, blurred, frame.size(), 0, 0, cv::INTER_LINEAR);
+    } else {
+        const double sigma = 6.0 + 16.0 * t;
+        cv::GaussianBlur(frame, blurred, cv::Size(0, 0), sigma, sigma);
+    }
+
+    cv::Mat srcF, blurF;
+    frame.convertTo(srcF, CV_32FC3);
+    blurred.convertTo(blurF, CV_32FC3);
+    const cv::Mat inv = cv::Scalar::all(1.0) - mask3;
+    cv::Mat mixed = srcF.mul(mask3) + blurF.mul(inv);
+    mixed.convertTo(frame, CV_8UC3);
+}
+
+static void applyVirtualBackgroundColor(cv::Mat &frame, const QImage &maskImage, const QColor &color)
+{
+    if (frame.empty() || maskImage.isNull() || frame.type() != CV_8UC3 || !color.isValid()) return;
+
+    cv::Mat mask3;
+    if (!buildVirtualBackgroundSoftMask(frame.size(), maskImage, &mask3)) return;
+
+    cv::Mat srcF;
+    frame.convertTo(srcF, CV_32FC3);
+
+    cv::Mat solid(frame.rows, frame.cols, CV_32FC3,
+                  cv::Scalar(static_cast<float>(color.blue()),
+                             static_cast<float>(color.green()),
+                             static_cast<float>(color.red())));
+
+    const cv::Mat inv = cv::Scalar::all(1.0) - mask3;
+    cv::Mat mixed = srcF.mul(mask3) + solid.mul(inv);
+    mixed.convertTo(frame, CV_8UC3);
+}
+
+static bool buildBackgroundImageMat(const QImage &backgroundImage, const cv::Size &frameSize, cv::Mat *out)
+{
+    if (!out || backgroundImage.isNull() || frameSize.width <= 0 || frameSize.height <= 0) return false;
+
+    QImage rgbImage = backgroundImage.convertToFormat(QImage::Format_RGB888);
+    if (rgbImage.isNull()) return false;
+
+    QImage fitted = rgbImage.scaled(frameSize.width,
+                                    frameSize.height,
+                                    Qt::KeepAspectRatioByExpanding,
+                                    Qt::SmoothTransformation);
+    if (fitted.isNull()) return false;
+
+    const int x = std::max(0, (fitted.width() - frameSize.width) / 2);
+    const int y = std::max(0, (fitted.height() - frameSize.height) / 2);
+    fitted = fitted.copy(x, y, frameSize.width, frameSize.height);
+    if (fitted.isNull()) return false;
+
+    cv::Mat rgb(frameSize.height,
+                frameSize.width,
+                CV_8UC3,
+                const_cast<uchar *>(fitted.constBits()),
+                fitted.bytesPerLine());
+    cv::Mat bgr;
+    cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
+    *out = bgr;
+    return true;
+}
+
+static void applyVirtualBackgroundImage(cv::Mat &frame, const QImage &maskImage, const QImage &backgroundImage)
+{
+    if (frame.empty() || maskImage.isNull() || frame.type() != CV_8UC3 || backgroundImage.isNull()) return;
+
+    cv::Mat mask3;
+    if (!buildVirtualBackgroundSoftMask(frame.size(), maskImage, &mask3)) return;
+
+    cv::Mat background;
+    if (!buildBackgroundImageMat(backgroundImage, frame.size(), &background)) return;
+
+    cv::Mat srcF, bgF;
+    frame.convertTo(srcF, CV_32FC3);
+    background.convertTo(bgF, CV_32FC3);
+
+    const cv::Mat inv = cv::Scalar::all(1.0) - mask3;
+    cv::Mat mixed = srcF.mul(mask3) + bgF.mul(inv);
+    mixed.convertTo(frame, CV_8UC3);
+}
+
 // 工具函数：按比例扩展人脸区域，并裁剪到合法范围
 static cv::Rect expandFaceRect(const cv::Rect &r, const cv::Size &size, double sx, double sy)
 {   // 1. 计算原始人脸框的中心点坐标 (cx, cy)
@@ -178,6 +334,13 @@ void VideoCapture::captureLoop()
         bool beautyOn = false;
         int beautyLv = 0;
         int beautySty = 0;
+        bool virtualBgOn = false;
+        QString virtualBgMode = QStringLiteral("off");
+        QColor virtualBgColor = QColor(QStringLiteral("#ddebff"));
+        QImage virtualBgImage;
+        int virtualBgBlurStrength = 45;
+        int virtualBgRequestInterval = 4;
+        QImage virtualBgMask;
 
         {
             QMutexLocker locker(&mutex);
@@ -188,6 +351,13 @@ void VideoCapture::captureLoop()
             beautyOn = beautyEnabled;
             beautyLv = beautyLevel;
             beautySty = beautyStyle;
+            virtualBgOn = virtualBackgroundEnabled;
+            virtualBgMode = virtualBackgroundMode;
+            virtualBgColor = virtualBackgroundColor;
+            virtualBgImage = virtualBackgroundImage;
+            virtualBgBlurStrength = virtualBackgroundBlurStrength;
+            virtualBgRequestInterval = std::max(1, virtualBackgroundRequestInterval);
+            virtualBgMask = latestVirtualBackgroundMask;
         }
 
          //动态帧率节流（核心优化点）
@@ -226,24 +396,31 @@ void VideoCapture::captureLoop()
                 applyBeautyFilter(frame, beautySty, beautyLv);
             }
 
-            img = QImage(frame.cols, frame.rows, QImage::Format_RGB888);
-            if (img.isNull()) {
-                QThread::msleep(5);
-                continue;
+            if (virtualBgOn) {
+                ++segmentationRequestTick;
+                if (segmentationRequestTick >= virtualBgRequestInterval) {
+                    segmentationRequestTick = 0;
+                    QImage segmentationInput;
+                    if (bgrMatToRgbImage(frame, &segmentationInput)) {
+                        emit segmentationFrameReady(segmentationInput);
+                    }
+                }
+                if (!virtualBgMask.isNull()) {
+                    if (virtualBgMode == QStringLiteral("color")) {
+                        applyVirtualBackgroundColor(frame, virtualBgMask, virtualBgColor);
+                    } else if (virtualBgMode == QStringLiteral("image")) {
+                        applyVirtualBackgroundImage(frame, virtualBgMask, virtualBgImage);
+                    } else {
+                        applyVirtualBackgroundBlur(frame, virtualBgMask, virtualBgBlurStrength);
+                    }
+                }
+            } else {
+                segmentationRequestTick = 0;
             }
 
-            // 将 BGR 拷贝为 RGB，OpenCV 默认是 BGR 像素格式，QImage 是 RGB 格式，需要逐像素转换
-            for (int y = 0; y < frame.rows; ++y) {
-                //获取行指针（内存直接访问），这两步是直接操作内存，比逐像素调用接口快得多，适合高帧率的视频处理场景。
-                //frame.ptr<uchar>(y)：获取 OpenCV 图像第 y 行的像素数据起始地址（uchar 是 8 位无符号字符，对应 0~255 的像素值）
-                const uchar *src = frame.ptr<uchar>(y);
-                uchar *dst = img.scanLine(y);   //获取 QImage 第 y 行的像素数据起始地址
-                //核心：BGR → RGB 通道调换
-                for (int x = 0; x < frame.cols; ++x) {
-                    dst[3 * x + 0] = src[3 * x + 2];//R通道
-                    dst[3 * x + 1] = src[3 * x + 1];//G通道
-                    dst[3 * x + 2] = src[3 * x + 0];//B通道
-                }
+            if (!bgrMatToRgbImage(frame, &img)) {
+                QThread::msleep(5);
+                continue;
             }
         } else {    //屏幕/窗口采集分支
             int targetScreen = 0;
@@ -646,4 +823,63 @@ void VideoCapture::setBeautyStyle(int style)
 {
     QMutexLocker locker(&mutex);
     beautyStyle = std::clamp(style, 0, 6);
+}
+
+void VideoCapture::setVirtualBackgroundEnabled(bool on)
+{
+    QMutexLocker locker(&mutex);
+    virtualBackgroundEnabled = on;
+    if (!virtualBackgroundEnabled) {
+        latestVirtualBackgroundMask = QImage();
+    }
+}
+
+void VideoCapture::setVirtualBackgroundMode(const QString &mode)
+{
+    QMutexLocker locker(&mutex);
+    const QString normalized = mode.trimmed().toLower();
+    if (normalized == QStringLiteral("blur")
+        || normalized == QStringLiteral("color")
+        || normalized == QStringLiteral("image")) {
+        virtualBackgroundMode = normalized;
+    } else {
+        virtualBackgroundMode = QStringLiteral("off");
+    }
+}
+
+void VideoCapture::setVirtualBackgroundColor(const QColor &color)
+{
+    if (!color.isValid()) return;
+    QMutexLocker locker(&mutex);
+    virtualBackgroundColor = color;
+}
+
+void VideoCapture::setVirtualBackgroundImage(const QImage &image)
+{
+    QMutexLocker locker(&mutex);
+    virtualBackgroundImage = image;
+}
+
+void VideoCapture::setVirtualBackgroundBlurStrength(int level)
+{
+    QMutexLocker locker(&mutex);
+    virtualBackgroundBlurStrength = std::clamp(level, 0, 100);
+}
+
+void VideoCapture::setVirtualBackgroundRequestInterval(int interval)
+{
+    QMutexLocker locker(&mutex);
+    virtualBackgroundRequestInterval = std::max(1, interval);
+}
+
+void VideoCapture::updateVirtualBackgroundMask(const QImage &mask)
+{
+    QMutexLocker locker(&mutex);
+    latestVirtualBackgroundMask = mask.isNull() ? QImage() : mask.convertToFormat(QImage::Format_Grayscale8);
+}
+
+void VideoCapture::clearVirtualBackgroundMask()
+{
+    QMutexLocker locker(&mutex);
+    latestVirtualBackgroundMask = QImage();
 }

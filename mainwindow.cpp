@@ -1,5 +1,6 @@
 ﻿#include "mainwindow.h"
 #include "aiassistantdialog.h"
+#include "aisegmentationclient.h"
 #include "./ui_mainwindow.h"
 #include <QImage>
 #include <QPixmap>
@@ -156,12 +157,46 @@ MainWindow::MainWindow(QWidget *parent)
     refreshRemoteTiles();
     setupMeetingStatsUi();
     setupLoginUi();
+    aiSegmentationClient = new AiSegmentationClient(this);
+    aiSegmentationClient->configure(aiVirtualBackgroundEnabled
+                                        && aiVirtualBackgroundMode != QStringLiteral("off")
+                                        && (aiVirtualBackgroundMode != QStringLiteral("image")
+                                            || !aiVirtualBackgroundImage.isNull())
+                                        && !aiServiceBaseUrl.isEmpty(),
+                                    aiServiceBaseUrl,
+                                    aiSegmentationTimeoutMs);
+    connect(aiSegmentationClient, &AiSegmentationClient::segmentationFailed, this,
+            [this](quint64 requestId, const QString &reason) {
+        qWarning() << "[AI Segment] request failed id=" << requestId << "reason=" << reason;
+    });
+    connect(aiSegmentationClient, &AiSegmentationClient::segmentationDiscarded, this,
+            [](quint64 requestId) {
+        qInfo() << "[AI Segment] discard stale result id=" << requestId;
+    });
+    connect(aiSegmentationClient, &AiSegmentationClient::segmentationReady, this,
+            [this](quint64, const QImage &mask, int, double) {
+        if (!videoWorker) return;
+        videoWorker->updateVirtualBackgroundMask(mask);
+    });
     appendRoomEvent(QString("部署配置已加载：%1 | 信令=%2 | RTMP=%3")
                         .arg(activeDeployProfile, signalUrl, rtmpPublishBaseUrl));
     if (aiAssistantEnabled && !aiServiceBaseUrl.isEmpty()) {
         appendRoomEvent(QString("AI 助手已启用：%1").arg(aiServiceBaseUrl));
     } else {
         appendRoomEvent("AI 助手未启用");
+    }
+    if (aiVirtualBackgroundEnabled) {
+        if (aiVirtualBackgroundMode == QStringLiteral("blur")) {
+            appendRoomEvent(QString("A2 虚拟背景已按配置启用：背景虚化（强度%1）").arg(aiVirtualBackgroundBlurStrength));
+        } else if (aiVirtualBackgroundMode == QStringLiteral("color")) {
+            appendRoomEvent(QString("A2 虚拟背景已按配置启用：纯色背景（%1）")
+                                .arg(aiVirtualBackgroundColor.name(QColor::HexRgb)));
+        } else if (aiVirtualBackgroundMode == QStringLiteral("image") && !aiVirtualBackgroundImage.isNull()) {
+            appendRoomEvent(QString("A2 虚拟背景已按配置启用：图片背景（%1）")
+                                .arg(aiVirtualBackgroundImagePath.isEmpty()
+                                         ? QStringLiteral("已选图片")
+                                         : QFileInfo(aiVirtualBackgroundImagePath).fileName()));
+        }
     }
     //信令自动重连定时器
     signalReconnectTimer = new QTimer(this);
@@ -279,6 +314,24 @@ void MainWindow::loadAppConfig()
                                                settings.value("ai/timeout_ms", aiTimeoutMs)).toInt();
     const QString loadedAiName = settings.value(profilePrefix + "ai_assistant_name",
                                                 settings.value("ai/assistant_name", aiAssistantName)).toString().trimmed();
+    const bool loadedVirtualBgEnabled = settings.value(profilePrefix + "ai_virtual_bg_enabled",
+                                                       settings.value("ai/virtual_bg_enabled", aiVirtualBackgroundEnabled)).toBool();
+    const QString loadedVirtualBgMode = settings.value(profilePrefix + "ai_virtual_bg_mode",
+                                                       settings.value("ai/virtual_bg_mode", aiVirtualBackgroundMode)).toString().trimmed();
+    const int loadedVirtualBgBlur = settings.value(profilePrefix + "ai_virtual_bg_blur_strength",
+                                                   settings.value("ai/virtual_bg_blur_strength", aiVirtualBackgroundBlurStrength)).toInt();
+    const QString loadedVirtualBgColor = settings.value(profilePrefix + "ai_virtual_bg_color",
+                                                        settings.value("ai/virtual_bg_color",
+                                                                       aiVirtualBackgroundColor.name(QColor::HexRgb))).toString().trimmed();
+    const QString loadedVirtualBgImage = settings.value(profilePrefix + "ai_virtual_bg_image",
+                                                        settings.value("ai/virtual_bg_image",
+                                                                       aiVirtualBackgroundImagePath)).toString().trimmed();
+    const int loadedSegmentInterval = settings.value(profilePrefix + "ai_segment_interval",
+                                                     settings.value("ai/segment_interval", aiSegmentationRequestInterval)).toInt();
+    const int loadedSegmentTimeout = settings.value(profilePrefix + "ai_segment_timeout_ms",
+                                                    settings.value("ai/segment_timeout_ms", aiSegmentationTimeoutMs)).toInt();
+    const int loadedSegmentMaxSide = settings.value(profilePrefix + "ai_segment_max_input_side",
+                                                    settings.value("ai/segment_max_input_side", aiSegmentationMaxInputSide)).toInt();
 
     if (!loadedSignal.isEmpty()) signalUrl = loadedSignal;
     if (!loadedPublish.isEmpty()) rtmpPublishBaseUrl = loadedPublish;
@@ -287,6 +340,26 @@ void MainWindow::loadAppConfig()
     aiAssistantEnabled = loadedAiEnabled;
     aiTimeoutMs = loadedAiTimeout > 0 ? loadedAiTimeout : aiTimeoutMs;
     if (!loadedAiName.isEmpty()) aiAssistantName = loadedAiName;
+    aiVirtualBackgroundEnabled = loadedVirtualBgEnabled;
+    if (!loadedVirtualBgMode.isEmpty()) aiVirtualBackgroundMode = loadedVirtualBgMode.trimmed().toLower();
+    if (!loadedVirtualBgColor.isEmpty()) {
+        const QColor configuredColor(loadedVirtualBgColor);
+        if (configuredColor.isValid()) {
+            aiVirtualBackgroundColor = configuredColor;
+        }
+    }
+    aiVirtualBackgroundImagePath = loadedVirtualBgImage;
+    aiVirtualBackgroundImage = QImage();
+    if (!aiVirtualBackgroundImagePath.isEmpty()) {
+        const QImage configuredImage(aiVirtualBackgroundImagePath);
+        if (!configuredImage.isNull()) {
+            aiVirtualBackgroundImage = configuredImage;
+        }
+    }
+    aiVirtualBackgroundBlurStrength = loadedVirtualBgBlur;
+    aiSegmentationRequestInterval = loadedSegmentInterval;
+    aiSegmentationTimeoutMs = loadedSegmentTimeout;
+    aiSegmentationMaxInputSide = loadedSegmentMaxSide;
     activeDeployProfile = profile;
 
     signalUrl = signalUrl.trimmed();
@@ -295,6 +368,20 @@ void MainWindow::loadAppConfig()
     aiServiceBaseUrl = normalizedUrlBase(aiServiceBaseUrl);
     aiTimeoutMs = qMax(1000, aiTimeoutMs);
     aiAssistantName = aiAssistantName.trimmed().isEmpty() ? QStringLiteral("AI助手") : aiAssistantName.trimmed();
+    aiVirtualBackgroundMode = aiVirtualBackgroundMode.trimmed().toLower();
+    if (aiVirtualBackgroundMode != QStringLiteral("blur")
+        && aiVirtualBackgroundMode != QStringLiteral("color")
+        && aiVirtualBackgroundMode != QStringLiteral("image")) {
+        aiVirtualBackgroundMode = QStringLiteral("off");
+    }
+    if (aiVirtualBackgroundMode == QStringLiteral("image") && aiVirtualBackgroundImage.isNull()) {
+        aiVirtualBackgroundMode = QStringLiteral("off");
+        aiVirtualBackgroundEnabled = false;
+    }
+    aiVirtualBackgroundBlurStrength = qBound(0, aiVirtualBackgroundBlurStrength, 100);
+    aiSegmentationRequestInterval = qBound(1, aiSegmentationRequestInterval, 12);
+    aiSegmentationTimeoutMs = qBound(300, aiSegmentationTimeoutMs, 5000);
+    aiSegmentationMaxInputSide = qBound(128, aiSegmentationMaxInputSide, 1024);
 
     qInfo() << "[Config] loaded profile=" << activeDeployProfile
             << "path=" << appConfigPath
@@ -303,7 +390,15 @@ void MainWindow::loadAppConfig()
             << "rtmpPlay=" << rtmpPlayBaseUrl
             << "aiEnabled=" << aiAssistantEnabled
             << "aiService=" << aiServiceBaseUrl
-            << "aiTimeoutMs=" << aiTimeoutMs;
+            << "aiTimeoutMs=" << aiTimeoutMs
+            << "aiVirtualBgEnabled=" << aiVirtualBackgroundEnabled
+            << "aiVirtualBgMode=" << aiVirtualBackgroundMode
+            << "aiVirtualBgColor=" << aiVirtualBackgroundColor.name(QColor::HexRgb)
+            << "aiVirtualBgImage=" << aiVirtualBackgroundImagePath
+            << "aiVirtualBgBlur=" << aiVirtualBackgroundBlurStrength
+            << "aiSegInterval=" << aiSegmentationRequestInterval
+            << "aiSegTimeoutMs=" << aiSegmentationTimeoutMs
+            << "aiSegMaxSide=" << aiSegmentationMaxInputSide;
 }
 
 QString MainWindow::buildRtmpPublishUrl(const QString &stream) const
@@ -572,6 +667,22 @@ void MainWindow::on_startMeetingButton_clicked()
                 self->recorder->pushVideoFrame(img);
             }
         }, Qt::QueuedConnection);
+        disconnect(videoWorker, &VideoCapture::segmentationFrameReady, this, nullptr);
+        connect(videoWorker, &VideoCapture::segmentationFrameReady, this, [this](const QImage &img) {
+            if (!aiSegmentationClient) return;
+            if (!aiVirtualBackgroundEnabled || aiVirtualBackgroundMode == QStringLiteral("off")) return;
+            if (aiVirtualBackgroundMode == QStringLiteral("image") && aiVirtualBackgroundImage.isNull()) return;
+            if (img.isNull()) return;
+
+            QImage requestImage = img;
+            if (requestImage.width() > aiSegmentationMaxInputSide || requestImage.height() > aiSegmentationMaxInputSide) {
+                requestImage = requestImage.scaled(aiSegmentationMaxInputSide,
+                                                   aiSegmentationMaxInputSide,
+                                                   Qt::KeepAspectRatio,
+                                                   Qt::SmoothTransformation);
+            }
+            aiSegmentationClient->requestSegmentation(requestImage, true);
+        }, Qt::QueuedConnection);
 
         int camIndex = 0;
         if (ui && ui->cameraDevicecomboBox) {
@@ -589,6 +700,7 @@ void MainWindow::on_startMeetingButton_clicked()
         videoThread->start(QThread::HighPriority);  //高优先级启动线程
         applyLocalVideoSource();
         applyBeautyToWorker();
+        applyAiVirtualBackgroundToWorker();
     }
     //编码/推流线程初始化，均以高优先级启动
     if (!encThread) {
@@ -1017,6 +1129,12 @@ void MainWindow::applyLocalVideoSource()
     //不能走QueuedConnection:captureLoop常驻会导致槽不执行
     videoWorker->setTargetFps(targetFps);
     videoWorker->setCaptureMode(mode);
+    if (mode != 1) {
+        applyAiVirtualBackgroundToWorker();
+    } else {
+        videoWorker->setVirtualBackgroundEnabled(false);
+        videoWorker->clearVirtualBackgroundMask();
+    }
     qInfo()<<"[Share] local source="<<(mode==1?shareSourceName:"camera")<<"fps="<<targetFps;
 }
 
@@ -1032,6 +1150,154 @@ void MainWindow::applyBeautyToWorker()
     videoWorker->setBeautyStyle(style);
     videoWorker->setBeautyLevel(level);
     videoWorker->setBeautyEnabled(level>0&&style>0);
+}
+
+void MainWindow::applyAiVirtualBackgroundToWorker()
+{
+    if (!videoWorker) return;
+
+    const bool imageModeReady = (aiVirtualBackgroundMode != QStringLiteral("image"))
+                                || !aiVirtualBackgroundImage.isNull();
+    const bool effectEnabled = aiVirtualBackgroundEnabled
+                               && aiVirtualBackgroundMode != QStringLiteral("off")
+                               && imageModeReady
+                               && !localScreenShareOn;
+
+    videoWorker->setVirtualBackgroundMode(aiVirtualBackgroundMode);
+    videoWorker->setVirtualBackgroundColor(aiVirtualBackgroundColor);
+    videoWorker->setVirtualBackgroundImage(aiVirtualBackgroundImage);
+    videoWorker->setVirtualBackgroundBlurStrength(aiVirtualBackgroundBlurStrength);
+    videoWorker->setVirtualBackgroundRequestInterval(aiSegmentationRequestInterval);
+    videoWorker->setVirtualBackgroundEnabled(effectEnabled);
+    if (!effectEnabled) {
+        videoWorker->clearVirtualBackgroundMask();
+    }
+
+    if (aiSegmentationClient) {
+        aiSegmentationClient->configure(effectEnabled && !aiServiceBaseUrl.isEmpty(),
+                                        aiServiceBaseUrl,
+                                        aiSegmentationTimeoutMs);
+    }
+}
+//将 AI 虚拟背景的配置参数，持久化保存到应用的 INI 格式配置文件中
+//校验路径 → 创建配置对象 → 写入参数 → 同步落盘
+void MainWindow::saveAiVirtualBackgroundPrefs() const
+{
+    if (appConfigPath.isEmpty()) return;
+
+    QSettings settings(appConfigPath, QSettings::IniFormat);
+    settings.setValue(QStringLiteral("ai/virtual_bg_enabled"), aiVirtualBackgroundEnabled);
+    settings.setValue(QStringLiteral("ai/virtual_bg_mode"), aiVirtualBackgroundMode);
+    settings.setValue(QStringLiteral("ai/virtual_bg_color"), aiVirtualBackgroundColor.name(QColor::HexRgb));
+    settings.setValue(QStringLiteral("ai/virtual_bg_image"), aiVirtualBackgroundImagePath);
+    settings.setValue(QStringLiteral("ai/virtual_bg_blur_strength"), aiVirtualBackgroundBlurStrength);
+    settings.sync();
+}
+
+void MainWindow::setAiVirtualBackgroundMode(const QString &modeName)
+{
+    QString normalized = modeName.trimmed().toLower();
+    if (normalized != QStringLiteral("blur")
+        && normalized != QStringLiteral("color")
+        && normalized != QStringLiteral("image")) {
+        normalized = QStringLiteral("off");
+    }
+
+    const bool enabled = (normalized != QStringLiteral("off"));
+    const bool changed = (aiVirtualBackgroundEnabled != enabled)
+                         || (aiVirtualBackgroundMode != normalized);
+
+    aiVirtualBackgroundEnabled = enabled;
+    aiVirtualBackgroundMode = normalized;
+    saveAiVirtualBackgroundPrefs();
+    applyAiVirtualBackgroundToWorker();
+    refreshSelfControlActions();
+
+    if (!changed) return;
+
+    if (!enabled) {
+        appendRoomEvent(QStringLiteral("虚拟背景已关闭"));
+        return;
+    }
+
+    if (localScreenShareOn) {
+        appendRoomEvent(QStringLiteral("虚拟背景模式已切换，屏幕共享期间暂不生效"));
+        return;
+    }
+
+    if (normalized == QStringLiteral("color")) {
+        appendRoomEvent(QStringLiteral("虚拟背景已开启：纯色背景（%1）")
+                            .arg(aiVirtualBackgroundColor.name(QColor::HexRgb)));
+        return;
+    }
+
+    if (normalized == QStringLiteral("image")) {
+        appendRoomEvent(QStringLiteral("虚拟背景已开启：图片背景（%1）")
+                            .arg(aiVirtualBackgroundImagePath.isEmpty()
+                                     ? QStringLiteral("已选图片")
+                                     : QFileInfo(aiVirtualBackgroundImagePath).fileName()));
+        return;
+    }
+
+    appendRoomEvent(QStringLiteral("虚拟背景已开启：背景虚化（强度%1）").arg(aiVirtualBackgroundBlurStrength));
+}
+
+void MainWindow::setAiVirtualBackgroundColor(const QColor &color, const QString &displayName)
+{
+    if (!color.isValid()) return;
+    const bool changed = (!aiVirtualBackgroundEnabled)
+                         || (aiVirtualBackgroundMode != QStringLiteral("color"))
+                         || (aiVirtualBackgroundColor != color);
+    aiVirtualBackgroundColor = color;
+    aiVirtualBackgroundEnabled = true;
+    aiVirtualBackgroundMode = QStringLiteral("color");
+    saveAiVirtualBackgroundPrefs();
+    applyAiVirtualBackgroundToWorker();
+    refreshSelfControlActions();
+
+    if (!changed) return;
+
+    if (localScreenShareOn) {
+        appendRoomEvent(QStringLiteral("虚拟背景已切换为纯色背景（%1），屏幕共享期间暂不生效")
+                            .arg(displayName.isEmpty() ? color.name(QColor::HexRgb) : displayName));
+    } else {
+        appendRoomEvent(QStringLiteral("虚拟背景已切换为纯色背景（%1）")
+                            .arg(displayName.isEmpty() ? color.name(QColor::HexRgb) : displayName));
+    }
+}
+
+void MainWindow::chooseAiVirtualBackgroundImage()
+{
+    const QString filePath = QFileDialog::getOpenFileName(
+        this,
+        QStringLiteral("选择虚拟背景图片"),
+        aiVirtualBackgroundImagePath.isEmpty()
+            ? QDir::homePath()
+            : QFileInfo(aiVirtualBackgroundImagePath).absolutePath(),
+        QStringLiteral("图片文件 (*.png *.jpg *.jpeg *.bmp *.webp)"));
+    if (filePath.isEmpty()) return;
+
+    const QImage image(filePath);
+    if (image.isNull()) {
+        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("无法加载所选图片"));
+        return;
+    }
+
+    aiVirtualBackgroundImagePath = QDir::fromNativeSeparators(QFileInfo(filePath).absoluteFilePath());
+    aiVirtualBackgroundImage = image;
+    aiVirtualBackgroundEnabled = true;
+    aiVirtualBackgroundMode = QStringLiteral("image");
+    saveAiVirtualBackgroundPrefs();
+    applyAiVirtualBackgroundToWorker();
+    refreshSelfControlActions();
+
+    if (localScreenShareOn) {
+        appendRoomEvent(QStringLiteral("虚拟背景已切换为图片背景（%1），屏幕共享期间暂不生效")
+                            .arg(QFileInfo(aiVirtualBackgroundImagePath).fileName()));
+    } else {
+        appendRoomEvent(QStringLiteral("虚拟背景已切换为图片背景（%1）")
+                            .arg(QFileInfo(aiVirtualBackgroundImagePath).fileName()));
+    }
 }
 
 // 设置美颜模式与强度并刷新 UI 与日志
@@ -2398,6 +2664,44 @@ void MainWindow::setupBottomMenus()//聊天面板入口
             refreshSelfControlActions();
         });
 
+        auto *virtualBgMenu = moreMenu->addMenu(QStringLiteral("虚拟背景"));
+        auto *virtualBgGroup = new QActionGroup(virtualBgMenu);
+        virtualBgGroup->setExclusive(true);
+
+        virtualBgOffAction = virtualBgMenu->addAction(QStringLiteral("关闭"));
+        virtualBgBlurAction = virtualBgMenu->addAction(QStringLiteral("背景虚化"));
+        auto *virtualBgColorMenu = virtualBgMenu->addMenu(QStringLiteral("纯色背景"));
+        virtualBgColorMintAction = virtualBgColorMenu->addAction(QStringLiteral("薄荷绿"));
+        virtualBgColorSkyAction = virtualBgColorMenu->addAction(QStringLiteral("浅天蓝"));
+        virtualBgColorCreamAction = virtualBgColorMenu->addAction(QStringLiteral("暖米白"));
+        virtualBgImageAction = virtualBgMenu->addAction(QStringLiteral("图片背景..."));
+
+        for (QAction *action : {virtualBgOffAction, virtualBgBlurAction,
+                                virtualBgColorMintAction, virtualBgColorSkyAction,
+                                virtualBgColorCreamAction, virtualBgImageAction}) {
+            action->setCheckable(true);
+            action->setActionGroup(virtualBgGroup);
+        }
+
+        connect(virtualBgOffAction, &QAction::triggered, this, [this]() {
+            setAiVirtualBackgroundMode(QStringLiteral("off"));
+        });
+        connect(virtualBgBlurAction, &QAction::triggered, this, [this]() {
+            setAiVirtualBackgroundMode(QStringLiteral("blur"));
+        });
+        connect(virtualBgColorMintAction, &QAction::triggered, this, [this]() {
+            setAiVirtualBackgroundColor(QColor(QStringLiteral("#d8f3dc")), QStringLiteral("薄荷绿"));
+        });
+        connect(virtualBgColorSkyAction, &QAction::triggered, this, [this]() {
+            setAiVirtualBackgroundColor(QColor(QStringLiteral("#ddebff")), QStringLiteral("浅天蓝"));
+        });
+        connect(virtualBgColorCreamAction, &QAction::triggered, this, [this]() {
+            setAiVirtualBackgroundColor(QColor(QStringLiteral("#f5ebd6")), QStringLiteral("暖米白"));
+        });
+        connect(virtualBgImageAction, &QAction::triggered, this, [this]() {
+            chooseAiVirtualBackgroundImage();
+        });
+
         auto *whiteboard = moreMenu->addAction("协作白板");
         connect(whiteboard,&QAction::triggered,this,[this](){
             if(roomDock) roomDock->show();
@@ -2455,6 +2759,62 @@ void MainWindow::refreshSelfControlActions()
     }
     if(selfShareToggleAction){
         selfShareToggleAction->setText(localScreenShareOn?"停止屏幕共享":"开始屏幕共享");
+    }
+    if (virtualBgOffAction) {
+        const bool effectEnabled = aiVirtualBackgroundEnabled
+                                   && aiVirtualBackgroundMode != QStringLiteral("off");
+        virtualBgOffAction->setChecked(!effectEnabled);
+        virtualBgOffAction->setToolTip(QStringLiteral("关闭本地摄像头的虚拟背景"));
+    }
+    if (virtualBgBlurAction) {
+        const bool blurEnabled = aiVirtualBackgroundEnabled
+                                 && aiVirtualBackgroundMode == QStringLiteral("blur");
+        virtualBgBlurAction->setChecked(blurEnabled);
+        virtualBgBlurAction->setEnabled(!localScreenShareOn);
+        virtualBgBlurAction->setToolTip(localScreenShareOn
+                                            ? QStringLiteral("屏幕共享期间暂不支持虚拟背景")
+                                            : QStringLiteral("对本地摄像头启用背景虚化"));
+        if (localScreenShareOn && blurEnabled) {
+            virtualBgBlurAction->setText(QStringLiteral("背景虚化（共享中暂挂起）"));
+        } else {
+            virtualBgBlurAction->setText(QStringLiteral("背景虚化"));
+        }
+    }
+    if (virtualBgImageAction) {
+        const bool imageEnabled = aiVirtualBackgroundEnabled
+                                  && aiVirtualBackgroundMode == QStringLiteral("image")
+                                  && !aiVirtualBackgroundImage.isNull();
+        virtualBgImageAction->setChecked(imageEnabled);
+        virtualBgImageAction->setEnabled(!localScreenShareOn);
+        if (localScreenShareOn && imageEnabled) {
+            virtualBgImageAction->setText(QStringLiteral("图片背景（共享中暂挂起）"));
+        } else if (imageEnabled) {
+            virtualBgImageAction->setText(QStringLiteral("图片背景（已选）"));
+        } else {
+            virtualBgImageAction->setText(QStringLiteral("图片背景..."));
+        }
+        virtualBgImageAction->setToolTip(aiVirtualBackgroundImagePath.isEmpty()
+                                             ? QStringLiteral("选择一张本地图片作为摄像头背景")
+                                             : aiVirtualBackgroundImagePath);
+    }
+    const QString bgColorName = aiVirtualBackgroundColor.name(QColor::HexRgb).toLower();
+    if (virtualBgColorMintAction) {
+        virtualBgColorMintAction->setChecked(aiVirtualBackgroundEnabled
+                                             && aiVirtualBackgroundMode == QStringLiteral("color")
+                                             && bgColorName == QStringLiteral("#d8f3dc"));
+        virtualBgColorMintAction->setEnabled(!localScreenShareOn);
+    }
+    if (virtualBgColorSkyAction) {
+        virtualBgColorSkyAction->setChecked(aiVirtualBackgroundEnabled
+                                            && aiVirtualBackgroundMode == QStringLiteral("color")
+                                            && bgColorName == QStringLiteral("#ddebff"));
+        virtualBgColorSkyAction->setEnabled(!localScreenShareOn);
+    }
+    if (virtualBgColorCreamAction) {
+        virtualBgColorCreamAction->setChecked(aiVirtualBackgroundEnabled
+                                              && aiVirtualBackgroundMode == QStringLiteral("color")
+                                              && bgColorName == QStringLiteral("#f5ebd6"));
+        virtualBgColorCreamAction->setEnabled(!localScreenShareOn);
     }
     updateMeetingHeaderUi();
     if(whiteboardClearButton){
