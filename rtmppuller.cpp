@@ -2,6 +2,8 @@
 
 #include <QDebug>
 #include <QMediaDevices>
+#include <QThread>
+#include <algorithm>
 #include <cstring>
 
 static QString ffErr(int err) { // 将FFmpeg 库返回的错误码（整数） 转换成人类可读的 UTF-8 格式字符串
@@ -161,7 +163,7 @@ void rtmppuller::startPull(const QString &url) {
                 playFmt_ = dev.isFormatSupported(desired) ? desired : dev.preferredFormat();
                 // 4. 创建Qt音频输出器+启动音频输出
                 audioSink_ = new QAudioSink(dev, playFmt_);
-                audioSink_->setBufferSize(playFmt_.bytesForDuration(60000));
+                audioSink_->setBufferSize(playFmt_.bytesForDuration(45000));
                 audioOut_ = audioSink_->start();    // 启动音频输出（返回写入设备）
                 // 5. 配置FFmpeg音频重采样（输入格式→Qt播放格式）
                 AVSampleFormat outFmt = AV_SAMPLE_FMT_S16;
@@ -267,7 +269,7 @@ void rtmppuller::startPull(const QString &url) {
                         if (audioSink_ && audioOut_) {
                             // 7. 缓存音频数据（防止播放卡顿）
                             audioPending_.append(outBuf.constData(), bytes);
-                            const int maxPending = playFmt_.bytesForDuration(120000);   // 最大缓存120ms
+                            const int maxPending = playFmt_.bytesForDuration(85000);   // 最大缓存约85ms，避免音质因欠缓冲变差
                             if (audioPending_.size() > maxPending) {
                                 audioPending_.remove(0, audioPending_.size() - maxPending);
                             }
@@ -328,6 +330,7 @@ void rtmppuller::startPull(const QString &url) {
                 qInfo() << "[RtmpPuller] first video frame received";
                 loggedFirstFrame = true;
             }
+            paceVideoAgainstAudio_();
             // 6. 发射视频帧信号（供外部UI显示）
             emit videoFrameReady(img);
             av_frame_unref(frame);
@@ -404,6 +407,29 @@ void rtmppuller::cleanup() {
     }
     audioPending_.clear();
     aStream = -1;
+}
+
+qint64 rtmppuller::currentAudioBufferedMs_() const
+{
+    if (!audioSink_) return 0;
+
+    const qint64 sinkBuffered = std::max<qint64>(0, audioSink_->bufferSize() - audioSink_->bytesFree());
+    const qint64 totalBytes = sinkBuffered + audioPending_.size();
+    if (totalBytes <= 0) return 0;
+
+    const qint64 us = playFmt_.durationForBytes(totalBytes);
+    return us > 0 ? (us / 1000) : 0;
+}
+
+void rtmppuller::paceVideoAgainstAudio_()
+{
+    if (!audioSink_ || !audioOut_ || !audioEnabled_.loadAcquire()) return;
+
+    const qint64 bufferedMs = currentAudioBufferedMs_();
+    if (bufferedMs <= 34) return;
+
+    const unsigned long sleepMs = static_cast<unsigned long>(std::clamp<qint64>(bufferedMs - 26, 1, 4));
+    QThread::msleep(sleepMs);
 }
 
 //音频缓存刷写：将缓存的音频数据写入 Qt 音频设备

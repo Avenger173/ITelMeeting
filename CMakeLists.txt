@@ -43,6 +43,8 @@ set(PROJECT_SOURCES
         aiassistantdialog.cpp
         aiassistantdialog.h
         aiassistantdialog.ui
+        aidetectionclient.cpp
+        aidetectionclient.h
         aisegmentationclient.cpp
         aisegmentationclient.h
         resources.qrc

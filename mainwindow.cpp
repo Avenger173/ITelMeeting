@@ -37,6 +37,7 @@
 #include <QStatusBar>
 #include <QSizePolicy>
 #include <algorithm>
+#include <cmath>
 #include<QHBoxLayout>
 #include<QTabWidget>
 #include<QGuiApplication>
@@ -178,6 +179,29 @@ MainWindow::MainWindow(QWidget *parent)
         if (!videoWorker) return;
         videoWorker->updateVirtualBackgroundMask(mask);
     });
+    aiDetectionClient = new AiDetectionClient(this);
+    updateAiDetectionClientConfig();
+    connect(aiDetectionClient, &AiDetectionClient::detectionReady, this,
+            [this](quint64, const AiDetectionList &detections, int latencyMs, const QSize &imageSize) {
+        aiDetectionRequestPending = false;
+        latestAiDetections = detections;
+        latestAiDetectionImageSize = imageSize;
+        latestAiDetectionLatencyMs = latencyMs;
+        latestAiDetectionUpdatedMs = QDateTime::currentMSecsSinceEpoch();
+    });
+    connect(aiDetectionClient, &AiDetectionClient::detectionDiscarded, this,
+            [this](quint64) {
+        aiDetectionRequestPending = false;
+    });
+    connect(aiDetectionClient, &AiDetectionClient::detectionFailed, this,
+            [this](quint64, const QString &reason) {
+        aiDetectionRequestPending = false;
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (nowMs - lastAiDetectionErrorLogMs >= 3000) {
+            lastAiDetectionErrorLogMs = nowMs;
+            qWarning() << "[AI Detect] request failed:" << reason;
+        }
+    });
     appendRoomEvent(QString("部署配置已加载：%1 | 信令=%2 | RTMP=%3")
                         .arg(activeDeployProfile, signalUrl, rtmpPublishBaseUrl));
     if (aiAssistantEnabled && !aiServiceBaseUrl.isEmpty()) {
@@ -197,6 +221,10 @@ MainWindow::MainWindow(QWidget *parent)
                                          ? QStringLiteral("已选图片")
                                          : QFileInfo(aiVirtualBackgroundImagePath).fileName()));
         }
+    }
+    if (aiDetectionEnabled && aiDetectionPreviewEnabled) {
+        appendRoomEvent(QString("A3 目标检测调试已启用：%1 | 间隔=%2帧")
+                            .arg(aiServiceBaseUrl, QString::number(aiDetectionRequestInterval)));
     }
     //信令自动重连定时器
     signalReconnectTimer = new QTimer(this);
@@ -332,6 +360,22 @@ void MainWindow::loadAppConfig()
                                                     settings.value("ai/segment_timeout_ms", aiSegmentationTimeoutMs)).toInt();
     const int loadedSegmentMaxSide = settings.value(profilePrefix + "ai_segment_max_input_side",
                                                     settings.value("ai/segment_max_input_side", aiSegmentationMaxInputSide)).toInt();
+    const bool loadedDetectEnabled = settings.value(profilePrefix + "ai_detect_enabled",
+                                                    settings.value("ai/detect_enabled", aiDetectionEnabled)).toBool();
+    const bool loadedDetectPreviewEnabled = settings.value(profilePrefix + "ai_detect_preview_enabled",
+                                                           settings.value("ai/detect_preview_enabled", aiDetectionPreviewEnabled)).toBool();
+    const int loadedDetectInterval = settings.value(profilePrefix + "ai_detect_interval",
+                                                    settings.value("ai/detect_interval", aiDetectionRequestInterval)).toInt();
+    const int loadedDetectTimeout = settings.value(profilePrefix + "ai_detect_timeout_ms",
+                                                   settings.value("ai/detect_timeout_ms", aiDetectionTimeoutMs)).toInt();
+    const int loadedDetectMaxSide = settings.value(profilePrefix + "ai_detect_max_input_side",
+                                                   settings.value("ai/detect_max_input_side", aiDetectionMaxInputSide)).toInt();
+    const double loadedDetectConf = settings.value(profilePrefix + "ai_detect_conf_threshold",
+                                                   settings.value("ai/detect_conf_threshold", aiDetectionConfThreshold)).toDouble();
+    const double loadedDetectIou = settings.value(profilePrefix + "ai_detect_iou_threshold",
+                                                  settings.value("ai/detect_iou_threshold", aiDetectionIouThreshold)).toDouble();
+    const int loadedDetectMaxDetections = settings.value(profilePrefix + "ai_detect_max_detections",
+                                                         settings.value("ai/detect_max_detections", aiDetectionMaxDetections)).toInt();
 
     if (!loadedSignal.isEmpty()) signalUrl = loadedSignal;
     if (!loadedPublish.isEmpty()) rtmpPublishBaseUrl = loadedPublish;
@@ -360,6 +404,14 @@ void MainWindow::loadAppConfig()
     aiSegmentationRequestInterval = loadedSegmentInterval;
     aiSegmentationTimeoutMs = loadedSegmentTimeout;
     aiSegmentationMaxInputSide = loadedSegmentMaxSide;
+    aiDetectionEnabled = loadedDetectEnabled;
+    aiDetectionPreviewEnabled = loadedDetectPreviewEnabled;
+    aiDetectionRequestInterval = loadedDetectInterval;
+    aiDetectionTimeoutMs = loadedDetectTimeout;
+    aiDetectionMaxInputSide = loadedDetectMaxSide;
+    aiDetectionConfThreshold = loadedDetectConf;
+    aiDetectionIouThreshold = loadedDetectIou;
+    aiDetectionMaxDetections = loadedDetectMaxDetections;
     activeDeployProfile = profile;
 
     signalUrl = signalUrl.trimmed();
@@ -382,6 +434,12 @@ void MainWindow::loadAppConfig()
     aiSegmentationRequestInterval = qBound(1, aiSegmentationRequestInterval, 12);
     aiSegmentationTimeoutMs = qBound(300, aiSegmentationTimeoutMs, 5000);
     aiSegmentationMaxInputSide = qBound(128, aiSegmentationMaxInputSide, 1024);
+    aiDetectionRequestInterval = qBound(1, aiDetectionRequestInterval, 30);
+    aiDetectionTimeoutMs = qBound(300, aiDetectionTimeoutMs, 5000);
+    aiDetectionMaxInputSide = qBound(160, aiDetectionMaxInputSide, 1280);
+    aiDetectionConfThreshold = std::clamp(aiDetectionConfThreshold, 0.01, 0.99);
+    aiDetectionIouThreshold = std::clamp(aiDetectionIouThreshold, 0.05, 0.95);
+    aiDetectionMaxDetections = qBound(1, aiDetectionMaxDetections, 100);
 
     qInfo() << "[Config] loaded profile=" << activeDeployProfile
             << "path=" << appConfigPath
@@ -398,7 +456,15 @@ void MainWindow::loadAppConfig()
             << "aiVirtualBgBlur=" << aiVirtualBackgroundBlurStrength
             << "aiSegInterval=" << aiSegmentationRequestInterval
             << "aiSegTimeoutMs=" << aiSegmentationTimeoutMs
-            << "aiSegMaxSide=" << aiSegmentationMaxInputSide;
+            << "aiSegMaxSide=" << aiSegmentationMaxInputSide
+            << "aiDetectEnabled=" << aiDetectionEnabled
+            << "aiDetectPreview=" << aiDetectionPreviewEnabled
+            << "aiDetectInterval=" << aiDetectionRequestInterval
+            << "aiDetectTimeoutMs=" << aiDetectionTimeoutMs
+            << "aiDetectMaxSide=" << aiDetectionMaxInputSide
+            << "aiDetectConf=" << aiDetectionConfThreshold
+            << "aiDetectIou=" << aiDetectionIouThreshold
+            << "aiDetectMaxDetections=" << aiDetectionMaxDetections;
 }
 
 QString MainWindow::buildRtmpPublishUrl(const QString &stream) const
@@ -661,8 +727,10 @@ void MainWindow::on_startMeetingButton_clicked()
             if(!self) return;
             if(self->meetingStopped) return;
             if(!localLabel) return;
-            localLabel->setPixmap(QPixmap::fromImage(img).scaled(
+            const QImage previewImage = self->buildAiDetectionPreviewFrame(img);
+            localLabel->setPixmap(QPixmap::fromImage(previewImage).scaled(
                 localLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            self->requestAiDetectionPreview(img);
             if (self->camRecording && self->recorder && self->recorder->isOpen()) {
                 self->recorder->pushVideoFrame(img);
             }
@@ -994,6 +1062,12 @@ void MainWindow::on_stopMeetingButton_clicked()
     refreshRoomUserList();
     clearAllTileFrames();
     latestRemoteFrames.clear();
+    aiDetectionRequestTick = 0;
+    aiDetectionRequestPending = false;
+    latestAiDetections.clear();
+    latestAiDetectionImageSize = QSize();
+    latestAiDetectionLatencyMs = 0;
+    latestAiDetectionUpdatedMs = 0;
     if (remoteStack && remoteGridPage) {
         remoteStack->setCurrentWidget(remoteGridPage);
     }
@@ -1135,6 +1209,7 @@ void MainWindow::applyLocalVideoSource()
         videoWorker->setVirtualBackgroundEnabled(false);
         videoWorker->clearVirtualBackgroundMask();
     }
+    updateAiDetectionClientConfig();
     qInfo()<<"[Share] local source="<<(mode==1?shareSourceName:"camera")<<"fps="<<targetFps;
 }
 
@@ -1178,6 +1253,149 @@ void MainWindow::applyAiVirtualBackgroundToWorker()
                                         aiServiceBaseUrl,
                                         aiSegmentationTimeoutMs);
     }
+    updateAiDetectionClientConfig();
+}
+
+bool MainWindow::isAiVirtualBackgroundEffectActive() const
+{
+    const bool imageModeReady = (aiVirtualBackgroundMode != QStringLiteral("image"))
+                                || !aiVirtualBackgroundImage.isNull();
+    return aiVirtualBackgroundEnabled
+           && aiVirtualBackgroundMode != QStringLiteral("off")
+           && imageModeReady
+           && !localScreenShareOn;
+}
+
+void MainWindow::updateAiDetectionClientConfig()
+{
+    if (aiDetectionClient) {
+        const bool effectEnabled = aiDetectionEnabled
+                                   && aiDetectionPreviewEnabled
+                                   && !localScreenShareOn
+                                   && !isAiVirtualBackgroundEffectActive()
+                                   && !aiServiceBaseUrl.isEmpty();
+        aiDetectionClient->configure(effectEnabled, aiServiceBaseUrl, aiDetectionTimeoutMs);
+    }
+
+    if (!aiDetectionEnabled || !aiDetectionPreviewEnabled || localScreenShareOn || isAiVirtualBackgroundEffectActive()) {
+        aiDetectionRequestTick = 0;
+        aiDetectionRequestPending = false;
+        latestAiDetections.clear();
+        latestAiDetectionImageSize = QSize();
+        latestAiDetectionLatencyMs = 0;
+        latestAiDetectionUpdatedMs = 0;
+    }
+}
+
+void MainWindow::requestAiDetectionPreview(const QImage &frame)
+{
+    if (!aiDetectionClient
+        || !aiDetectionClient->isEnabled()
+        || !aiDetectionEnabled
+        || !aiDetectionPreviewEnabled
+        || isAiVirtualBackgroundEffectActive()
+        || localScreenShareOn
+        || frame.isNull()) {
+        return;
+    }
+
+    const int effectiveInterval = std::max(aiDetectionRequestInterval, 15);
+    ++aiDetectionRequestTick;
+    if (aiDetectionRequestTick < effectiveInterval) {
+        return;
+    }
+    aiDetectionRequestTick = 0;
+
+    if (aiDetectionRequestPending) {
+        return;
+    }
+
+    QImage requestImage = frame;
+    const int effectiveMaxInputSide = std::min(aiDetectionMaxInputSide, 416);
+    if (requestImage.width() > effectiveMaxInputSide || requestImage.height() > effectiveMaxInputSide) {
+        requestImage = requestImage.scaled(effectiveMaxInputSide,
+                                           effectiveMaxInputSide,
+                                           Qt::KeepAspectRatio,
+                                           Qt::SmoothTransformation);
+    }
+
+    aiDetectionRequestPending = true;
+    aiDetectionClient->requestDetection(requestImage,
+                                        aiDetectionConfThreshold,
+                                        aiDetectionIouThreshold,
+                                        aiDetectionMaxDetections);
+}
+
+QImage MainWindow::buildAiDetectionPreviewFrame(const QImage &frame) const
+{
+    if (frame.isNull()
+        || !aiDetectionEnabled
+        || !aiDetectionPreviewEnabled
+        || isAiVirtualBackgroundEffectActive()
+        || latestAiDetectionUpdatedMs <= 0
+        || !latestAiDetectionImageSize.isValid()) {
+        return frame;
+    }
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (nowMs - latestAiDetectionUpdatedMs > 1800) {
+        return frame;
+    }
+
+    QImage output = frame.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    QPainter painter(&output);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+
+    const double scaleX = output.width() / static_cast<double>(latestAiDetectionImageSize.width());
+    const double scaleY = output.height() / static_cast<double>(latestAiDetectionImageSize.height());
+    const QPen pen(QColor("#58c4ff"), 2.0);
+    painter.setPen(pen);
+
+    QFont labelFont = painter.font();
+    labelFont.setPointSize(std::max(9, labelFont.pointSize()));
+    labelFont.setBold(true);
+    painter.setFont(labelFont);
+
+    for (const AiDetectionBox &det : latestAiDetections) {
+        QRect rect(static_cast<int>(std::lround(det.box.x() * scaleX)),
+                   static_cast<int>(std::lround(det.box.y() * scaleY)),
+                   static_cast<int>(std::lround(det.box.width() * scaleX)),
+                   static_cast<int>(std::lround(det.box.height() * scaleY)));
+        rect = rect.normalized().intersected(output.rect().adjusted(0, 0, -1, -1));
+        if (rect.width() < 6 || rect.height() < 6) continue;
+
+        painter.drawRoundedRect(rect, 8, 8);
+
+        const QString labelText = det.label.isEmpty()
+                                      ? QString("%1%%").arg(static_cast<int>(std::lround(det.score * 100.0)))
+                                      : QString("%1 %2%").arg(det.label).arg(static_cast<int>(std::lround(det.score * 100.0)));
+        const QRect textRect = painter.fontMetrics().boundingRect(labelText).adjusted(-8, -4, 8, 4);
+        QRect badgeRect(rect.left(),
+                        std::max(0, rect.top() - textRect.height() - 6),
+                        textRect.width(),
+                        textRect.height());
+        badgeRect = badgeRect.intersected(output.rect().adjusted(0, 0, -1, -1));
+        painter.fillRect(badgeRect, QColor(12, 20, 34, 220));
+        painter.setPen(Qt::NoPen);
+        painter.drawRect(badgeRect);
+        painter.setPen(QColor("#eef6ff"));
+        painter.drawText(badgeRect, Qt::AlignCenter, labelText);
+        painter.setPen(pen);
+    }
+
+    const QString badgeText = latestAiDetections.isEmpty()
+                                  ? QStringLiteral("A3 YOLO: 无目标  %1ms").arg(latestAiDetectionLatencyMs)
+                                  : QStringLiteral("A3 YOLO: %1 项  %2ms")
+                                        .arg(latestAiDetections.size())
+                                        .arg(latestAiDetectionLatencyMs);
+    const QRect badgeTextRect = painter.fontMetrics().boundingRect(badgeText).adjusted(-10, -6, 10, 6);
+    QRect badgeRect(10, 10, badgeTextRect.width(), badgeTextRect.height());
+    painter.fillRect(badgeRect, QColor(11, 18, 28, 210));
+    painter.setPen(QColor("#9de4ff"));
+    painter.drawRoundedRect(badgeRect, 8, 8);
+    painter.drawText(badgeRect, Qt::AlignCenter, badgeText);
+    return output;
 }
 //将 AI 虚拟背景的配置参数，持久化保存到应用的 INI 格式配置文件中
 //校验路径 → 创建配置对象 → 写入参数 → 同步落盘
@@ -1192,6 +1410,48 @@ void MainWindow::saveAiVirtualBackgroundPrefs() const
     settings.setValue(QStringLiteral("ai/virtual_bg_image"), aiVirtualBackgroundImagePath);
     settings.setValue(QStringLiteral("ai/virtual_bg_blur_strength"), aiVirtualBackgroundBlurStrength);
     settings.sync();
+}
+
+void MainWindow::saveAiDetectionPrefs() const
+{
+    if (appConfigPath.isEmpty()) return;
+
+    QSettings settings(appConfigPath, QSettings::IniFormat);
+    settings.setValue(QStringLiteral("ai/detect_enabled"), aiDetectionEnabled);
+    settings.setValue(QStringLiteral("ai/detect_preview_enabled"), aiDetectionPreviewEnabled);
+    settings.sync();
+}
+
+void MainWindow::setAiDetectionPreviewEnabled(bool enabled)
+{
+    const bool normalized = enabled;
+    const bool changed = (aiDetectionEnabled != normalized)
+                         || (aiDetectionPreviewEnabled != normalized);
+
+    aiDetectionEnabled = normalized;
+    aiDetectionPreviewEnabled = normalized;
+    saveAiDetectionPrefs();
+    updateAiDetectionClientConfig();
+    refreshSelfControlActions();
+
+    if (!changed) return;
+
+    if (!normalized) {
+        appendRoomEvent(QStringLiteral("A3 目标检测已关闭"));
+        return;
+    }
+
+    if (localScreenShareOn) {
+        appendRoomEvent(QStringLiteral("A3 目标检测已开启：本地预览调试（共享中暂挂起）"));
+        return;
+    }
+
+    if (isAiVirtualBackgroundEffectActive()) {
+        appendRoomEvent(QStringLiteral("A3 目标检测已开启：本地预览调试（虚拟背景中暂挂起）"));
+        return;
+    }
+
+    appendRoomEvent(QStringLiteral("A3 目标检测已开启：本地预览调试"));
 }
 
 void MainWindow::setAiVirtualBackgroundMode(const QString &modeName)
@@ -2702,6 +2962,23 @@ void MainWindow::setupBottomMenus()//聊天面板入口
             chooseAiVirtualBackgroundImage();
         });
 
+        auto *aiDetectMenu = moreMenu->addMenu(QStringLiteral("A3 目标检测"));
+        auto *aiDetectGroup = new QActionGroup(aiDetectMenu);
+        aiDetectGroup->setExclusive(true);
+
+        aiDetectOffAction = aiDetectMenu->addAction(QStringLiteral("关闭"));
+        aiDetectPreviewAction = aiDetectMenu->addAction(QStringLiteral("本地预览调试"));
+        for (QAction *action : {aiDetectOffAction, aiDetectPreviewAction}) {
+            action->setCheckable(true);
+            action->setActionGroup(aiDetectGroup);
+        }
+        connect(aiDetectOffAction, &QAction::triggered, this, [this]() {
+            setAiDetectionPreviewEnabled(false);
+        });
+        connect(aiDetectPreviewAction, &QAction::triggered, this, [this]() {
+            setAiDetectionPreviewEnabled(true);
+        });
+
         auto *whiteboard = moreMenu->addAction("协作白板");
         connect(whiteboard,&QAction::triggered,this,[this](){
             if(roomDock) roomDock->show();
@@ -2815,6 +3092,28 @@ void MainWindow::refreshSelfControlActions()
                                               && aiVirtualBackgroundMode == QStringLiteral("color")
                                               && bgColorName == QStringLiteral("#f5ebd6"));
         virtualBgColorCreamAction->setEnabled(!localScreenShareOn);
+    }
+    const bool aiDetectSuspendedByShare = aiDetectionEnabled
+                                          && aiDetectionPreviewEnabled
+                                          && localScreenShareOn;
+    const bool aiDetectSuspendedByVirtualBg = aiDetectionEnabled
+                                              && aiDetectionPreviewEnabled
+                                              && !localScreenShareOn
+                                              && isAiVirtualBackgroundEffectActive();
+    if (aiDetectOffAction) {
+        aiDetectOffAction->setChecked(!(aiDetectionEnabled && aiDetectionPreviewEnabled));
+        aiDetectOffAction->setToolTip(QStringLiteral("关闭 A3 YOLO 本地预览调试"));
+    }
+    if (aiDetectPreviewAction) {
+        aiDetectPreviewAction->setChecked(aiDetectionEnabled && aiDetectionPreviewEnabled);
+        if (aiDetectSuspendedByShare) {
+            aiDetectPreviewAction->setText(QStringLiteral("本地预览调试（共享中暂挂起）"));
+        } else if (aiDetectSuspendedByVirtualBg) {
+            aiDetectPreviewAction->setText(QStringLiteral("本地预览调试（虚拟背景中暂挂起）"));
+        } else {
+            aiDetectPreviewAction->setText(QStringLiteral("本地预览调试"));
+        }
+        aiDetectPreviewAction->setToolTip(QStringLiteral("在本地摄像头预览上显示 A3 YOLO 调试框，不进入推流"));
     }
     updateMeetingHeaderUi();
     if(whiteboardClearButton){

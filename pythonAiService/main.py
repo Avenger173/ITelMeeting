@@ -51,6 +51,14 @@ class ServiceConfig:
     segment_output_is_logits: bool = True
     segment_input_name: str = ""
     segment_output_name: str = ""
+    detect_enabled: bool = False
+    detect_backend: str = "onnxruntime"
+    detect_model_path: str = "models/yolo11n.onnx"
+    detect_input_size: int = 640
+    detect_conf_threshold: float = 0.35
+    detect_iou_threshold: float = 0.45
+    detect_input_name: str = ""
+    detect_output_name: str = ""
 
 
 def _resolve_config_path() -> Path:
@@ -75,6 +83,17 @@ def _resolve_segment_model_path(raw_path: str) -> str:
     text = (raw_path or "").strip()
     if not text:
         return str((_service_root() / "models" / "portrait_segmentation.onnx").resolve())
+
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        path = (_service_root() / path).resolve()
+    return str(path)
+
+
+def _resolve_detect_model_path(raw_path: str) -> str:
+    text = (raw_path or "").strip()
+    if not text:
+        return str((_service_root() / "models" / "yolo11n.onnx").resolve())
 
     path = Path(text).expanduser()
     if not path.is_absolute():
@@ -117,6 +136,16 @@ def _load_config() -> ServiceConfig:
         segment_output_is_logits=parser.getboolean("segment", "output_is_logits", fallback=True),
         segment_input_name=parser.get("segment", "input_name", fallback="").strip(),
         segment_output_name=parser.get("segment", "output_name", fallback="").strip(),
+        detect_enabled=parser.getboolean("detect", "enabled", fallback=False),
+        detect_backend=parser.get("detect", "backend", fallback="onnxruntime").strip().lower() or "onnxruntime",
+        detect_model_path=_resolve_detect_model_path(
+            parser.get("detect", "model_path", fallback="models/yolo11n.onnx").strip()
+        ),
+        detect_input_size=max(320, parser.getint("detect", "input_size", fallback=640)),
+        detect_conf_threshold=min(0.99, max(0.01, parser.getfloat("detect", "conf_threshold", fallback=0.35))),
+        detect_iou_threshold=min(0.95, max(0.05, parser.getfloat("detect", "iou_threshold", fallback=0.45))),
+        detect_input_name=parser.get("detect", "input_name", fallback="").strip(),
+        detect_output_name=parser.get("detect", "output_name", fallback="").strip(),
     )
 
     env_api_key = os.getenv("SMARTMEET_LLM_API_KEY", "").strip()
@@ -128,6 +157,11 @@ def _load_config() -> ServiceConfig:
     env_segment_w = os.getenv("SMARTMEET_SEGMENT_INPUT_WIDTH", "").strip()
     env_segment_h = os.getenv("SMARTMEET_SEGMENT_INPUT_HEIGHT", "").strip()
     env_segment_threshold = os.getenv("SMARTMEET_SEGMENT_THRESHOLD", "").strip()
+    env_detect_enabled = _env_bool("SMARTMEET_DETECT_ENABLED", cfg.detect_enabled)
+    env_detect_model = os.getenv("SMARTMEET_DETECT_MODEL", "").strip()
+    env_detect_input_size = os.getenv("SMARTMEET_DETECT_INPUT_SIZE", "").strip()
+    env_detect_conf = os.getenv("SMARTMEET_DETECT_CONF_THRESHOLD", "").strip()
+    env_detect_iou = os.getenv("SMARTMEET_DETECT_IOU_THRESHOLD", "").strip()
 
     if env_api_key:
         cfg.llm_api_key = env_api_key
@@ -151,8 +185,24 @@ def _load_config() -> ServiceConfig:
         except ValueError:
             logger.warning("invalid SMARTMEET_SEGMENT_THRESHOLD=%s", env_segment_threshold)
 
+    cfg.detect_enabled = env_detect_enabled
+    if env_detect_model:
+        cfg.detect_model_path = _resolve_detect_model_path(env_detect_model)
+    if env_detect_input_size.isdigit():
+        cfg.detect_input_size = max(320, int(env_detect_input_size))
+    if env_detect_conf:
+        try:
+            cfg.detect_conf_threshold = min(0.99, max(0.01, float(env_detect_conf)))
+        except ValueError:
+            logger.warning("invalid SMARTMEET_DETECT_CONF_THRESHOLD=%s", env_detect_conf)
+    if env_detect_iou:
+        try:
+            cfg.detect_iou_threshold = min(0.95, max(0.05, float(env_detect_iou)))
+        except ValueError:
+            logger.warning("invalid SMARTMEET_DETECT_IOU_THRESHOLD=%s", env_detect_iou)
+
     logger.info(
-        '[Config] path="%s" assistant="%s" mode="%s" llm_enabled=%s base="%s" model="%s" segment_enabled=%s segment_model="%s"',
+        '[Config] path="%s" assistant="%s" mode="%s" llm_enabled=%s base="%s" model="%s" segment_enabled=%s segment_model="%s" detect_enabled=%s detect_model="%s"',
         path,
         cfg.assistant_name,
         cfg.provider_mode,
@@ -161,6 +211,8 @@ def _load_config() -> ServiceConfig:
         cfg.llm_model or "<empty>",
         cfg.segment_enabled,
         cfg.segment_model_path,
+        cfg.detect_enabled,
+        cfg.detect_model_path,
     )
     return cfg
 
@@ -307,9 +359,211 @@ class OnnxPortraitSegmenter:
 
 SEGMENTER = OnnxPortraitSegmenter(CONFIG)
 
+COCO_LABELS = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light",
+    "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard",
+    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+    "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard",
+    "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
+    "scissors", "teddy bear", "hair drier", "toothbrush",
+]
+
+
+class OnnxYoloDetector:
+    def __init__(self, cfg: ServiceConfig) -> None:
+        self._cfg = cfg
+        self._session = None
+        self._lock = threading.Lock()
+        self.ready = False
+        self.note = "disabled"
+        self.backend = cfg.detect_backend
+        self.model_name = Path(cfg.detect_model_path).name or "<empty>"
+        self.input_name = cfg.detect_input_name
+        self.output_name = cfg.detect_output_name
+
+        if not cfg.detect_enabled:
+            return
+
+        if cfg.detect_backend != "onnxruntime":
+            self.note = f"unsupported_backend:{cfg.detect_backend}"
+            return
+
+        if ort is None:
+            self.note = "onnxruntime_missing"
+            return
+
+        model_path = Path(cfg.detect_model_path)
+        if not model_path.exists():
+            self.note = f"model_not_found:{model_path}"
+            return
+
+        try:
+            session_options = ort.SessionOptions()
+            session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            self._session = ort.InferenceSession(
+                str(model_path),
+                sess_options=session_options,
+                providers=["CPUExecutionProvider"],
+            )
+
+            if not self.input_name:
+                self.input_name = self._session.get_inputs()[0].name
+            if not self.output_name:
+                self.output_name = self._session.get_outputs()[0].name
+
+            self.ready = True
+            self.note = "ready"
+            logger.info(
+                '[Detect] ONNX ready model="%s" input="%s" output="%s" size=%d',
+                model_path,
+                self.input_name,
+                self.output_name,
+                cfg.detect_input_size,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.note = f"load_failed:{type(exc).__name__}"
+            logger.warning("detect model load failed: %s", exc)
+
+    def _preprocess(self, image: Image.Image) -> tuple[np.ndarray, int, int, float, float]:
+        rgb = image.convert("RGB")
+        orig_w, orig_h = rgb.size
+        target = self._cfg.detect_input_size
+        scale = min(target / max(1, orig_w), target / max(1, orig_h))
+        new_w = max(1, int(round(orig_w * scale)))
+        new_h = max(1, int(round(orig_h * scale)))
+        pad_x = (target - new_w) / 2.0
+        pad_y = (target - new_h) / 2.0
+
+        canvas = Image.new("RGB", (target, target), color=(114, 114, 114))
+        resized = rgb.resize((new_w, new_h), PIL_BILINEAR)
+        canvas.paste(resized, (int(round(pad_x)), int(round(pad_y))))
+
+        arr = np.asarray(canvas, dtype=np.float32) / 255.0
+        arr = np.transpose(arr, (2, 0, 1))[None, ...]
+        return arr, orig_w, orig_h, pad_x, pad_y
+
+    def _decode_output(self, output: np.ndarray) -> np.ndarray:
+        preds = np.asarray(output, dtype=np.float32)
+        if preds.ndim == 3 and preds.shape[0] == 1:
+            preds = preds[0]
+        if preds.ndim != 2:
+            raise ValueError(f"unsupported_detect_shape:{tuple(preds.shape)}")
+
+        # YOLOv8/11 ONNX 常见为 (84, 8400)；如果列数更像特征维则转置。
+        if preds.shape[0] <= 256 and preds.shape[1] > preds.shape[0]:
+            preds = preds.T
+        return preds
+
+    @staticmethod
+    def _box_iou(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+        x1 = np.maximum(box[0], boxes[:, 0])
+        y1 = np.maximum(box[1], boxes[:, 1])
+        x2 = np.minimum(box[2], boxes[:, 2])
+        y2 = np.minimum(box[3], boxes[:, 3])
+
+        inter = np.maximum(0.0, x2 - x1) * np.maximum(0.0, y2 - y1)
+        area_a = np.maximum(0.0, box[2] - box[0]) * np.maximum(0.0, box[3] - box[1])
+        area_b = np.maximum(0.0, boxes[:, 2] - boxes[:, 0]) * np.maximum(0.0, boxes[:, 3] - boxes[:, 1])
+        union = np.maximum(area_a + area_b - inter, 1e-6)
+        return inter / union
+
+    def _nms(self, boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list[int]:
+        order = scores.argsort()[::-1]
+        keep: list[int] = []
+        while order.size > 0:
+            current = int(order[0])
+            keep.append(current)
+            if order.size == 1:
+                break
+            rest = order[1:]
+            ious = self._box_iou(boxes[current], boxes[rest])
+            order = rest[ious < iou_threshold]
+        return keep
+
+    def detect_image(
+        self,
+        image: Image.Image,
+        conf_threshold: float,
+        iou_threshold: float,
+        max_detections: int,
+    ) -> tuple[list[dict], int, int]:
+        if not self.ready or self._session is None:
+            raise RuntimeError(self.note)
+
+        inputs, orig_w, orig_h, pad_x, pad_y = self._preprocess(image)
+        scale = min(
+            self._cfg.detect_input_size / max(1, orig_w),
+            self._cfg.detect_input_size / max(1, orig_h),
+        )
+
+        with self._lock:
+            outputs = self._session.run([self.output_name], {self.input_name: inputs})
+
+        preds = self._decode_output(outputs[0])
+        if preds.size == 0:
+            return [], orig_w, orig_h
+
+        detections: list[dict] = []
+
+        if preds.shape[1] == 6:
+            boxes = preds[:, :4].copy()
+            scores = preds[:, 4].copy()
+            class_ids = preds[:, 5].astype(np.int32)
+        else:
+            if preds.shape[1] < 6:
+                raise ValueError(f"unsupported_detect_columns:{preds.shape[1]}")
+            xywh = preds[:, :4]
+            class_scores = preds[:, 4:]
+            class_ids = class_scores.argmax(axis=1).astype(np.int32)
+            scores = class_scores[np.arange(class_scores.shape[0]), class_ids]
+            boxes = np.empty_like(xywh)
+            boxes[:, 0] = xywh[:, 0] - xywh[:, 2] / 2.0
+            boxes[:, 1] = xywh[:, 1] - xywh[:, 3] / 2.0
+            boxes[:, 2] = xywh[:, 0] + xywh[:, 2] / 2.0
+            boxes[:, 3] = xywh[:, 1] + xywh[:, 3] / 2.0
+
+        keep_mask = scores >= conf_threshold
+        boxes = boxes[keep_mask]
+        scores = scores[keep_mask]
+        class_ids = class_ids[keep_mask]
+
+        if boxes.size == 0:
+            return [], orig_w, orig_h
+
+        boxes[:, [0, 2]] = (boxes[:, [0, 2]] - pad_x) / max(scale, 1e-6)
+        boxes[:, [1, 3]] = (boxes[:, [1, 3]] - pad_y) / max(scale, 1e-6)
+        boxes[:, 0] = np.clip(boxes[:, 0], 0, orig_w - 1)
+        boxes[:, 1] = np.clip(boxes[:, 1], 0, orig_h - 1)
+        boxes[:, 2] = np.clip(boxes[:, 2], 0, orig_w - 1)
+        boxes[:, 3] = np.clip(boxes[:, 3], 0, orig_h - 1)
+
+        keep = self._nms(boxes, scores, iou_threshold)[:max_detections]
+        for idx in keep:
+            class_id = int(class_ids[idx])
+            label = COCO_LABELS[class_id] if 0 <= class_id < len(COCO_LABELS) else f"class_{class_id}"
+            detections.append(
+                {
+                    "class_id": class_id,
+                    "label": label,
+                    "score": float(scores[idx]),
+                    "x1": int(round(float(boxes[idx, 0]))),
+                    "y1": int(round(float(boxes[idx, 1]))),
+                    "x2": int(round(float(boxes[idx, 2]))),
+                    "y2": int(round(float(boxes[idx, 3]))),
+                }
+            )
+
+        return detections, orig_w, orig_h
+
+
+DETECTOR = OnnxYoloDetector(CONFIG)
+
 app = FastAPI(
     title="SmartMeet AI Service",
-    version="0.5.0",
+    version="0.6.0",
     description="SmartMeet 本地 AI 助手与人像分割服务",
 )
 
@@ -350,6 +604,36 @@ class SegmentResponse(BaseModel):
     mask_png_base64: str
     latency_ms: int
     foreground_ratio: float
+    note: Optional[str] = None
+
+
+class DetectRequest(BaseModel):
+    image_base64: str = Field(..., min_length=16)
+    request_id: Optional[str] = None
+    conf_threshold: Optional[float] = Field(default=None, ge=0.01, le=0.99)
+    iou_threshold: Optional[float] = Field(default=None, ge=0.05, le=0.95)
+    max_detections: int = Field(default=20, ge=1, le=100)
+
+
+class DetectionItem(BaseModel):
+    class_id: int
+    label: str
+    score: float
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
+class DetectResponse(BaseModel):
+    ok: bool = True
+    backend: str = "onnxruntime"
+    model: str
+    request_id: Optional[str] = None
+    width: int
+    height: int
+    detections: list[DetectionItem]
+    latency_ms: int
     note: Optional[str] = None
 
 
@@ -566,6 +850,11 @@ def healthz() -> dict:
         "segment_input_width": CONFIG.segment_input_width,
         "segment_input_height": CONFIG.segment_input_height,
         "segment_note": SEGMENTER.note,
+        "detect_ready": DETECTOR.ready,
+        "detect_backend": CONFIG.detect_backend,
+        "detect_model": DETECTOR.model_name,
+        "detect_input_size": CONFIG.detect_input_size,
+        "detect_note": DETECTOR.note,
     }
 
 
@@ -628,4 +917,43 @@ async def segment(req: SegmentRequest) -> SegmentResponse:
         latency_ms=latency_ms,
         foreground_ratio=foreground_ratio,
         note="soft_mask" if req.return_soft_mask else "binary_mask",
+    )
+
+
+@app.post("/detect", response_model=DetectResponse)
+async def detect(req: DetectRequest) -> DetectResponse:
+    start = time.perf_counter()
+
+    if not DETECTOR.ready:
+        raise HTTPException(status_code=503, detail=f"detect_not_ready:{DETECTOR.note}")
+
+    conf_threshold = req.conf_threshold if req.conf_threshold is not None else CONFIG.detect_conf_threshold
+    iou_threshold = req.iou_threshold if req.iou_threshold is not None else CONFIG.detect_iou_threshold
+
+    try:
+        image = _decode_image_from_base64(req.image_base64)
+        detections, width, height = DETECTOR.detect_image(
+            image=image,
+            conf_threshold=conf_threshold,
+            iou_threshold=iou_threshold,
+            max_detections=req.max_detections,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("detect request failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"detect_failed:{type(exc).__name__}") from exc
+
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    return DetectResponse(
+        backend=CONFIG.detect_backend,
+        model=DETECTOR.model_name,
+        request_id=req.request_id,
+        width=width,
+        height=height,
+        detections=detections,
+        latency_ms=latency_ms,
+        note=f"count={len(detections)}",
     )

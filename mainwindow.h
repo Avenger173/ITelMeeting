@@ -38,6 +38,7 @@
 #include <QQueue>           // 队列（最近日志缓存）
 #include <atomic>           // 原子变量
 #include <memory>           // 智能指针
+#include "aidetectionclient.h"
 
 // =========================
 // 项目内部模块头文件
@@ -213,6 +214,12 @@ private:
     void setAiVirtualBackgroundColor(const QColor &color, const QString &displayName); // 设置 A2 纯色背景
     void chooseAiVirtualBackgroundImage();                   // 选择 A2 图片背景
     void saveAiVirtualBackgroundPrefs() const;               // 持久化 A2 虚拟背景配置
+    void saveAiDetectionPrefs() const;                       // 持久化 A3 检测配置
+    void setAiDetectionPreviewEnabled(bool enabled);         // 设置 A3 本地预览调试开关
+    bool isAiVirtualBackgroundEffectActive() const;          // A2 当前是否处于实际生效状态
+    void updateAiDetectionClientConfig();                    // 同步 A3 检测客户端配置
+    void requestAiDetectionPreview(const QImage &frame);     // 请求 A3 检测（仅本地预览调试）
+    QImage buildAiDetectionPreviewFrame(const QImage &frame) const; // 在本地预览上绘制 A3 检测框
 
     // ===== 白板相关 =====
     void setupWhiteboardUi();                     // 初始化白板控件
@@ -274,6 +281,8 @@ private:
     QMetaObject::Connection recordConn;    // 采集音频 -> 录制连接
     QMetaObject::Connection audioSendConn; // 采集音频 -> 音频编码连接
     QMetaObject::Connection videoSendConn; // 采集视频 -> 视频编码连接
+    QMetaObject::Connection videoPushConn; // 视频编码 -> 推流连接
+    QMetaObject::Connection audioPushConn; // 音频编码 -> 推流连接
 
     // ===== 录制状态 =====
     bool isRecording = false;       // 是否处于 AV 录制态
@@ -283,6 +292,7 @@ private:
     qint64 lastPushMs = 0;          // 上次推送录制时间（调试/节流）
     std::shared_ptr<std::atomic_int> videoQueueDepthToken = std::make_shared<std::atomic_int>(0); // 编码在途帧计数
     qint64 lastVideoDropProtectLogMs = 0; // 上次“丢帧保护”日志时间
+    std::shared_ptr<std::atomic_int> videoPushQueueDepthToken = std::make_shared<std::atomic_int>(0); // 推流在途视频包计数
 
     // ===== UDP 历史链路（当前主线不是它）=====
     AVSender *sender = nullptr;     // UDP 发送器
@@ -340,6 +350,7 @@ private:
     int aiTimeoutMs = 600000;                                  // AI 请求超时
     QString aiAssistantName = QStringLiteral("AI助手");       // AI 助手显示名
     AiSegmentationClient *aiSegmentationClient = nullptr;     // A2 分割客户端（P2，不接主链）
+    AiDetectionClient *aiDetectionClient = nullptr;           // A3 检测客户端（P2/P3，仅本地预览）
     bool aiVirtualBackgroundEnabled = false;                  // A2 虚拟背景总开关
     QString aiVirtualBackgroundMode = QStringLiteral("off");  // A2 模式：off/blur
     QColor aiVirtualBackgroundColor = QColor(QStringLiteral("#ddebff")); // A2 纯色背景颜色
@@ -349,6 +360,21 @@ private:
     int aiSegmentationRequestInterval = 4;                    // 每 N 帧请求一次分割
     int aiSegmentationTimeoutMs = 1500;                       // 分割请求超时
     int aiSegmentationMaxInputSide = 512;                     // 分割请求最大输入边长
+    bool aiDetectionEnabled = false;                          // A3 总开关
+    bool aiDetectionPreviewEnabled = false;                   // A3 本地预览调试显示
+    int aiDetectionRequestInterval = 12;                      // 每 N 帧请求一次检测
+    int aiDetectionTimeoutMs = 1200;                          // A3 检测请求超时
+    int aiDetectionMaxInputSide = 640;                        // A3 检测输入最大边长
+    double aiDetectionConfThreshold = 0.35;                   // A3 置信度阈值
+    double aiDetectionIouThreshold = 0.45;                    // A3 NMS IOU 阈值
+    int aiDetectionMaxDetections = 12;                        // A3 最大检测数
+    int aiDetectionRequestTick = 0;                           // A3 请求帧计数
+    bool aiDetectionRequestPending = false;                   // A3 是否有在途请求
+    AiDetectionList latestAiDetections;                       // A3 最近检测结果
+    QSize latestAiDetectionImageSize;                         // A3 检测时的图像尺寸
+    qint64 latestAiDetectionLatencyMs = 0;                    // A3 最近检测延迟
+    qint64 latestAiDetectionUpdatedMs = 0;                    // A3 最近结果更新时间
+    qint64 lastAiDetectionErrorLogMs = 0;                     // A3 错误日志节流
     QString activeDeployProfile = "cloud";                   // 当前部署配置名
     QString appConfigPath;                                    // 实际加载的配置文件路径
     QTimer *signalReconnectTimer = nullptr; // 重连计时器
@@ -396,6 +422,8 @@ private:
     QAction *virtualBgColorSkyAction = nullptr;  // “虚拟背景-纯色-浅天蓝”
     QAction *virtualBgColorCreamAction = nullptr; // “虚拟背景-纯色-暖米白”
     QAction *virtualBgImageAction = nullptr;     // “虚拟背景-图片背景”
+    QAction *aiDetectOffAction = nullptr;        // “A3 目标检测-关闭”
+    QAction *aiDetectPreviewAction = nullptr;    // “A3 目标检测-本地预览调试”
 
     // 宫格单卡片数据结构
     struct RemoteTile {
