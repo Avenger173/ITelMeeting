@@ -6,7 +6,7 @@ SmartMeet 的本地 AI 服务。
 
 - A0/A1：AI 助手
 - A2：人像分割 `/segment`
-- A3-P1：YOLO 检测 `/detect`
+- A3：YOLO 检测 `/detect` 与 Qt 本地预览叠框
 
 ---
 
@@ -26,7 +26,8 @@ SmartMeet 的本地 AI 服务。
 - 不直接读取源码仓库
 - 不直接查询数据库
 - 不直接读取线上服务器实时状态
-- 默认只服务当前本地客户端
+- 默认用于本地客户端调用，个人助手问答不通过会议信令广播
+- 尚无共享会议历史、ASR 转写、会议记录工具调用与智能纪要
 
 当前 `/segment`：
 
@@ -35,18 +36,18 @@ SmartMeet 的本地 AI 服务。
 
 当前 `/detect`：
 
-- 只完成 Python 服务端第一阶段
-- 还没有正式接入 Qt 主链
+- 已接入 Qt 本地预览，提供菜单开关
+- 叠框不进入推流；虚拟背景或共享开启时暂停检测
 
 ---
 
 ## 3. 目录说明
 
-- [main.py](/d:/QTcoding/SmartMeet/pythonAiService/main.py)
-- [ai_service.ini](/d:/QTcoding/SmartMeet/pythonAiService/ai_service.ini)
-- [project_facts.md](/d:/QTcoding/SmartMeet/pythonAiService/project_facts.md)
-- [requirements.txt](/d:/QTcoding/SmartMeet/pythonAiService/requirements.txt)
-- [models/README.md](/d:/QTcoding/SmartMeet/pythonAiService/models/README.md)
+- [main.py](./main.py)
+- [ai_service.ini](./ai_service.ini)
+- [project_facts.md](./project_facts.md)
+- [requirements.txt](./requirements.txt)
+- [models/README.md](./models/README.md)
 
 ---
 
@@ -66,7 +67,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 18080
 
 配置文件：
 
-- [ai_service.ini](/d:/QTcoding/SmartMeet/pythonAiService/ai_service.ini)
+- [ai_service.ini](./ai_service.ini)
 
 主要分段：
 
@@ -87,7 +88,7 @@ $env:SMARTMEET_LLM_API_KEY="你的密钥"
 $env:SMARTMEET_SEGMENT_ENABLED="true"
 $env:SMARTMEET_SEGMENT_MODEL="D:\QTcoding\SmartMeet\pythonAiService\models\portrait_segmentation.onnx"
 $env:SMARTMEET_DETECT_ENABLED="true"
-$env:SMARTMEET_DETECT_MODEL="D:\QTcoding\SmartMeet\pythonAiService\models\yolov8n.onnx"
+$env:SMARTMEET_DETECT_MODEL="D:\QTcoding\SmartMeet\pythonAiService\models\yolo11n.onnx"
 ```
 
 ---
@@ -151,7 +152,7 @@ curl http://127.0.0.1:18080/healthz
 
 ## 9. 项目事实文件
 
-[project_facts.md](/d:/QTcoding/SmartMeet/pythonAiService/project_facts.md) 用来约束 AI 助手回答 SmartMeet 项目事实。
+[project_facts.md](./project_facts.md) 用来约束 AI 助手回答 SmartMeet 项目事实。
 
 如果这些事实变了，优先更新这份文件，而不是直接改写死在 `main.py` 里的提示词。
 
@@ -161,14 +162,17 @@ curl http://127.0.0.1:18080/healthz
 
 - A1：已收口
 - A2：已完成第一阶段并接入客户端
-- A3：已完成当前调试阶段，`/detect` 与 Qt 本地预览调试叠框已打通
+- A3：`/detect`、Qt 本地预览叠框与菜单开关已接入
+- 本服务当前仍是文字助手与视觉推理服务，不具备自主获取会议音频或历史的能力
 
 ---
 
 ## 11. 下一步
 
-当前更合理的顺序：
+以 [开发与部署计划](../docs/毕业设计开发与部署计划.md) 为准，以下均为待开发：
 
-1. 继续收口 A3 当前调试链路
-2. 评估是否需要正式 UI 开关或会议场景联动
-3. 再决定是否把检测结果从“本地预览调试”升级到更正式的客户端功能
+1. 恢复本地 Linux 服务，验证 WebRTC 原生 SDK 与 SFU 并迁移媒体链。
+2. 新增共享转写工作进程与会议记录接口，聊天和转写持久化；记录器按会议运行，不随个人客户端退出。
+3. 复用 Qt 独立助手窗口，增加受控工具调用、历史查询、阶段摘要与纪要编辑导出。
+
+个人问答按用户、会议和线程隔离，不广播给其他成员。共享服务可先放在开发电脑，后续按资源部署；与现有视觉服务分离。当前不接入 TTS、主动语音发言或停止播报，详细范围见 [首模块计划](../docs/毕业设计首模块计划.md)。
